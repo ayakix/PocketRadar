@@ -3,19 +3,27 @@ package com.ayakix.pocketradar.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.widget.Toast
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -26,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -57,8 +66,17 @@ private val ReceiverHome = LatLng(35.85, 139.93)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(viewModel: RadarViewModel) {
+    val context = LocalContext.current
     val aircraft by viewModel.aircraft.collectAsState()
     val trails by viewModel.trails.collectAsState()
+    val sourceState by viewModel.sourceState.collectAsState()
+
+    // Surface backend errors (e.g. rtl_tcp connection failure) as a toast.
+    LaunchedEffect(Unit) {
+        viewModel.errors.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(ReceiverHome, 9f)
@@ -67,13 +85,6 @@ fun MapScreen(viewModel: RadarViewModel) {
     var selected by remember { mutableStateOf<IcaoAddress?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Aircraft icon, tinted with the current Material 3 primary so it follows
-    // Dynamic Color and dark/light themes. We can only build the BitmapDescriptor
-    // after Google Maps has finished initialising — otherwise
-    // BitmapDescriptorFactory throws "IBitmapDescriptorFactory is not initialized".
-    // The raw Bitmap is held alongside the descriptor so we can recycle it when
-    // the tint changes (otherwise each theme switch leaks the previous bitmap).
-    val context = LocalContext.current
     val tint = MaterialTheme.colorScheme.primary.toArgb()
     var mapLoaded by remember { mutableStateOf(false) }
     var flightBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -91,55 +102,62 @@ fun MapScreen(viewModel: RadarViewModel) {
         onDispose { flightBitmap?.recycle() }
     }
 
-    GoogleMap(
-        modifier = Modifier.fillMaxWidth(),
-        cameraPositionState = cameraPositionState,
-        onMapLoaded = { mapLoaded = true },
-    ) {
-        // Aircraft markers — only drawn once the icon is ready (post onMapLoaded).
-        val icon = flightIcon
-        if (icon != null) {
-            aircraft.values.forEach { ac ->
-                val lat = ac.latitude
-                val lon = ac.longitude
-                if (lat != null && lon != null) {
-                    // remember() the MarkerState per ICAO so the map layer keeps the
-                    // same marker handle across recompositions; only the position is
-                    // updated when lat/lon change. Without this, every aircraft
-                    // update (~20 Hz) would re-add the marker and cause flicker.
-                    val markerState = remember(ac.icao) {
-                        MarkerState(position = LatLng(lat, lon))
+    Box(modifier = Modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState,
+            onMapLoaded = { mapLoaded = true },
+        ) {
+            val icon = flightIcon
+            if (icon != null) {
+                aircraft.values.forEach { ac ->
+                    val lat = ac.latitude
+                    val lon = ac.longitude
+                    if (lat != null && lon != null) {
+                        val markerState = remember(ac.icao) {
+                            MarkerState(position = LatLng(lat, lon))
+                        }
+                        LaunchedEffect(lat, lon) {
+                            markerState.position = LatLng(lat, lon)
+                        }
+                        Marker(
+                            state = markerState,
+                            title = ac.callsign ?: ac.icao.toString(),
+                            snippet = "${ac.altitudeFeet ?: "—"} ft · ${ac.groundSpeedKnots ?: "—"} kt",
+                            icon = icon,
+                            anchor = Offset(0.5f, 0.5f),
+                            rotation = ac.trackDegrees?.toFloat() ?: 0f,
+                            flat = true,
+                            onClick = {
+                                selected = ac.icao
+                                false
+                            },
+                        )
                     }
-                    LaunchedEffect(lat, lon) {
-                        markerState.position = LatLng(lat, lon)
-                    }
-                    Marker(
-                        state = markerState,
-                        title = ac.callsign ?: ac.icao.toString(),
-                        snippet = "${ac.altitudeFeet ?: "—"} ft · ${ac.groundSpeedKnots ?: "—"} kt",
-                        icon = icon,
-                        anchor = Offset(0.5f, 0.5f), // centre the plane on its position
-                        rotation = ac.trackDegrees?.toFloat() ?: 0f,
-                        flat = true, // keep rotation aligned with map north, not the camera
-                        onClick = {
-                            selected = ac.icao
-                            false // false → let Maps still center on the marker
-                        },
+                }
+            }
+
+            trails.forEach { (_, points) ->
+                if (points.size >= 2) {
+                    Polyline(
+                        points = points.map { it.toGoogleLatLng() },
+                        color = Color(0xFF00B0FF),
+                        width = 6f,
                     )
                 }
             }
         }
 
-        // Flight trails
-        trails.forEach { (_, points) ->
-            if (points.size >= 2) {
-                Polyline(
-                    points = points.map { it.toGoogleLatLng() },
-                    color = Color(0xFF00B0FF),
-                    width = 6f,
-                )
-            }
-        }
+        SourceControlBar(
+            state = sourceState,
+            aircraftCount = aircraft.size,
+            onReplay = viewModel::startReplay,
+            onLive = viewModel::startLive,
+            onStop = viewModel::stop,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(16.dp),
+        )
     }
 
     val selectedAircraft = selected?.let { aircraft[it] }
@@ -152,6 +170,59 @@ fun MapScreen(viewModel: RadarViewModel) {
         }
     }
 }
+
+@Composable
+private fun SourceControlBar(
+    state: SourceState,
+    aircraftCount: Int,
+    onReplay: () -> Unit,
+    onLive: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 4.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = state.running && state.mode == SourceMode.REPLAY,
+                    onClick = onReplay,
+                    label = { Text("Replay") },
+                )
+                FilterChip(
+                    selected = state.running && state.mode == SourceMode.LIVE,
+                    onClick = onLive,
+                    label = { Text("Live (rtl_tcp)") },
+                )
+                AssistChip(
+                    onClick = onStop,
+                    label = { Text("Stop") },
+                    enabled = state.running,
+                    colors = AssistChipDefaults.assistChipColors(),
+                )
+            }
+            Text(
+                text = if (state.running) "${state.mode.label}: $aircraftCount aircraft tracked"
+                else "Idle — pick a source to start",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+private val SourceMode.label: String
+    get() = when (this) {
+        SourceMode.REPLAY -> "Replay"
+        SourceMode.LIVE -> "Live"
+    }
 
 @Composable
 private fun AircraftDetailSheet(ac: Aircraft) {
@@ -199,12 +270,6 @@ private fun formatPosition(lat: Double?, lon: Double?): String? {
 
 private fun DomainLatLng.toGoogleLatLng(): LatLng = LatLng(latitude, longitude)
 
-/**
- * Render a vector drawable into a fresh [Bitmap], optionally re-coloured. The
- * bitmap is owned by the caller so it can be recycled when no longer needed —
- * Google Maps holds an internal copy via [BitmapDescriptorFactory.fromBitmap],
- * so the original can be safely released.
- */
 private fun createTintedBitmap(
     context: Context,
     @DrawableRes resId: Int,

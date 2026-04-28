@@ -42,8 +42,9 @@ android {
 }
 
 dependencies {
-    // Phase 1 decoder library.
+    // Phase 1 decoder library and Phase 3 radio library.
     implementation(project(":adsb-decoder"))
+    implementation(project(":adsb-radio"))
 
     // Compose BOM keeps the Compose artifact versions aligned.
     val composeBom = platform("androidx.compose:compose-bom:2026.04.01")
