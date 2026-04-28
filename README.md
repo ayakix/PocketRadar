@@ -139,6 +139,28 @@ testable artifact.
 
 The detailed task breakdown lives in `plan.md`.
 
+### Running the live receiver (Phase 3)
+
+1. Plug the RTL-SDR Blog V4 into the Android device through a powered OTG cable.
+   Connect the antenna to the SMA port.
+2. Open the **SDR driver** app first. Accept the USB permission dialog and tick
+   "use by default for this USB device" so subsequent attaches are seamless.
+   The app will start an `rtl_tcp` server on `localhost:1234`.
+3. Launch **PocketRadar**. The map opens centred on Tokyo Bay; tap **Live
+   (rtl_tcp)** in the top control bar to start the foreground service.
+4. The service connects to `rtl_tcp`, applies the ADS-B defaults
+   (1090 MHz, 2.4 MS/s, manual gain), demodulates I/Q in real time, and feeds
+   the same `AircraftStore` the Replay mode uses. Aircraft appear on the map
+   as their CRC-valid frames stream in.
+5. If `rtl_tcp` is not reachable (SDR driver app not running, dongle not
+   connected, etc.), an error toast appears and the service stops. Pick
+   **Replay** to fall back to the captured fixture demo.
+
+The notification shown while the service runs is the proof Android wants
+that the receiver is honest about staying alive in the background — tapping
+it returns to the map. Closing the app does not stop reception; tap **Stop**
+in the control bar.
+
 ## ADS-B / Mode S Protocol Reference
 
 This section is a quick map of what the Phase 1 decoder needs to understand. It is
@@ -207,7 +229,8 @@ The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`�
 
 ## Status
 
-**Phases 1 and 2 are complete.** Phase 3 (live RTL-SDR via TCP) is the next milestone.
+**Phases 1, 2 and 3 are complete.** All three modules are on `main` and the
+app supports both fixture-replay and live RTL-SDR reception.
 
 - **Phase 1 — `:adsb-decoder`** — pure Kotlin/JVM library decoding Mode S DF=17 messages
   into structured `Aircraft` records. Covers CRC-24 verification, identification (TC 1–4),
@@ -220,10 +243,13 @@ The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`�
   `ModalBottomSheet` with full aircraft details on tap. Material 3 Dynamic Color follows
   the device wallpaper on Android 12+ and reacts to dark / light. Stale aircraft fall
   off the map after 60 seconds.
-
-`MockMessageSource` (Phase 2) implements the same `Flow<String>` interface that the
-Phase 3 TCP source will produce, so wiring the live source is a drop-in replacement
-once the demodulator is ready.
+- **Phase 3 — `:adsb-radio` + `:app` integration** — pure Kotlin/JVM `:adsb-radio`
+  module hosts the rtl_tcp client and the I/Q demodulator (dump1090-style: magnitude,
+  6:5 decimation 2.4 → 2.0 MS/s, neighbour-comparison preamble detection, PPM bit
+  slicing). `:app` adds a foreground service (`FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE`)
+  that owns the receive coroutine and feeds the shared `AircraftStore`, plus a
+  source-mode toggle on the map (Replay / Live / Stop). Live mode is fed by
+  `RtlTcpMessageSource` against the Android **SDR driver** app on `localhost:1234`.
 
 ## License
 
