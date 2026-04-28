@@ -4,3 +4,16 @@ plan.md
 # Claude Code 関連
 .claude/
 CLAUDE.md
+
+# 一時キャプチャ（テスト fixture は adsb-decoder/src/test/resources/ で管理）
+/captured_messages.txt
+
+# Gradle / IntelliJ / Android Studio
+.gradle/
+build/
+.idea/
+*.iml
+local.properties
+
+# macOS
+.DS_Store

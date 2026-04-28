@@ -113,6 +113,72 @@ testable artifact.
 
 The detailed task breakdown lives in `plan.md`.
 
+## ADS-B / Mode S Protocol Reference
+
+This section is a quick map of what the Phase 1 decoder needs to understand. It is
+intentionally compact; *The 1090 Megahertz Riddle* is the long-form reference.
+
+### What an ADS-B message is
+
+Aircraft transponders broadcast **Mode S** signals on **1090 MHz**. ADS-B is one specific
+flavor of Mode S messages — namely **Downlink Format 17 (DF=17), the Extended Squitter** —
+that carries position, altitude, velocity, and identification of the aircraft.
+
+A Mode S frame on the wire is either **56 bits (short)** or **112 bits (long)**.
+ADS-B messages are always 112 bits long. `dump1090 --raw` writes them as
+`*` + 28 hex characters + `;`.
+
+### Bit layout of a 112-bit Mode S frame
+
+```
+ bit:    0     5    8                     32                                          88           112
+         ┌─────┬────┬──────────────────────┬────────────────────────────────────────────┬─────────────┐
+         │ DF  │ CA │        ICAO          │                  ME (payload)              │   CRC-24    │
+         │5 bit│3bit│       24 bit         │                    56 bit                  │   24 bit    │
+         └─────┴────┴──────────────────────┴────────────────────────────────────────────┴─────────────┘
+ byte:    [ 0 ]      [   1   2   3  ]       [   4   5   6   7   8   9  10  ]            [ 11  12  13 ]
+```
+
+| Field | Bits | Meaning |
+|---|---|---|
+| **DF** | 1–5 | Downlink Format. ADS-B = 17. |
+| **CA** | 6–8 | Capability subfield. |
+| **ICAO** | 9–32 | 24-bit aircraft address (e.g. `A14104`). |
+| **ME** | 33–88 | Payload. First 5 bits are the **Type Code**. |
+| **CRC-24** | 89–112 | Parity. Generator polynomial **`0xFFF409`**. For DF=17 a valid message has CRC syndrome = 0 after running the standard 24-bit CRC over bits 1–88. |
+
+The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`–`0x8F`
+(in the captured fixture, the long messages all begin with `*8d…` or `*8e…`).
+
+### DF=17 Type Codes (the first 5 bits of ME)
+
+| TC | Content | Used in this project? |
+|---|---|---|
+| 1–4 | Aircraft identification (callsign) | Yes |
+| 5–8 | Surface position (taxi etc.) | Skipped |
+| 9–18 | Airborne position with **barometric altitude** and **CPR-encoded lat/lon** | Yes |
+| 19 | Airborne velocity (ground speed, track, vertical rate) | Yes |
+| 20–22 | Airborne position with **GNSS altitude** | Optional |
+| 23–31 | Other (reserved, status, target state, etc.) | Skipped |
+
+### CPR (Compact Position Reporting), in 4 bullets
+
+- Lat/lon are split into **even** and **odd** frames. One frame alone is ambiguous.
+- **Globally unambiguous decoding** needs **one even + one odd frame within ~10 s**, then
+  reconstructs lat/lon by comparing the two encodings (zone-index trick).
+- **Locally unambiguous decoding** can use a known reference position (the receiver's
+  location) and decode a single frame, valid within ~180 nm of the reference.
+- Phase 1 implements **only the global (even/odd) variant** to keep the educational scope
+  tight; locally-referenced decoding can be added later.
+
+### CRC-24 in Mode S — the short version
+
+- 24-bit CRC, generator polynomial `0xFFF409` (== `x^24 + x^23 + x^22 + ... + 1`).
+- Computed bit-by-bit from MSB to LSB over the first 88 bits, then compared to the trailing
+  24-bit CRC field.
+- For DF=17 a clean message has **syndrome = 0**. The decoder rejects anything else (without
+  CRC checking, noise produces ghost aircraft on the map).
+
 ## Status
 
 Currently in **planning stage**. Hardware has been verified on macOS. The Android
