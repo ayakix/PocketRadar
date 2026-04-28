@@ -18,11 +18,17 @@ class MockMessageSource(
 ) {
 
     fun stream(): Flow<String> = flow {
-        context.assets.open(assetName).bufferedReader().useLines { lines ->
-            for (line in lines) {
-                if (line.isNotBlank()) {
-                    emit(line)
-                    delay(intervalMillis)
+        // Loop the fixture so the demo keeps producing aircraft for as long as
+        // the collector is alive; the captured file is only ~150 s of replay.
+        // Cancellation propagates through `delay`, so the inner stream is closed
+        // promptly when the collector goes away.
+        while (true) {
+            context.assets.open(assetName).bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    if (line.isNotBlank()) {
+                        emit(line)
+                        delay(intervalMillis)
+                    }
                 }
             }
         }

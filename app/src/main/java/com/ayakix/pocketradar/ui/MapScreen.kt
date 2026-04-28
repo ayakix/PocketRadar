@@ -19,6 +19,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,14 +71,24 @@ fun MapScreen(viewModel: RadarViewModel) {
     // Dynamic Color and dark/light themes. We can only build the BitmapDescriptor
     // after Google Maps has finished initialising — otherwise
     // BitmapDescriptorFactory throws "IBitmapDescriptorFactory is not initialized".
+    // The raw Bitmap is held alongside the descriptor so we can recycle it when
+    // the tint changes (otherwise each theme switch leaks the previous bitmap).
     val context = LocalContext.current
     val tint = MaterialTheme.colorScheme.primary.toArgb()
     var mapLoaded by remember { mutableStateOf(false) }
+    var flightBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var flightIcon by remember { mutableStateOf<BitmapDescriptor?>(null) }
+
     LaunchedEffect(mapLoaded, tint) {
         if (mapLoaded) {
-            flightIcon = vectorToBitmapDescriptor(context, R.drawable.flight_48px, tint)
+            flightBitmap?.recycle()
+            val bitmap = createTintedBitmap(context, R.drawable.flight_48px, tint)
+            flightBitmap = bitmap
+            flightIcon = BitmapDescriptorFactory.fromBitmap(bitmap)
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { flightBitmap?.recycle() }
     }
 
     GoogleMap(
@@ -92,8 +103,18 @@ fun MapScreen(viewModel: RadarViewModel) {
                 val lat = ac.latitude
                 val lon = ac.longitude
                 if (lat != null && lon != null) {
+                    // remember() the MarkerState per ICAO so the map layer keeps the
+                    // same marker handle across recompositions; only the position is
+                    // updated when lat/lon change. Without this, every aircraft
+                    // update (~20 Hz) would re-add the marker and cause flicker.
+                    val markerState = remember(ac.icao) {
+                        MarkerState(position = LatLng(lat, lon))
+                    }
+                    LaunchedEffect(lat, lon) {
+                        markerState.position = LatLng(lat, lon)
+                    }
                     Marker(
-                        state = MarkerState(position = LatLng(lat, lon)),
+                        state = markerState,
                         title = ac.callsign ?: ac.icao.toString(),
                         snippet = "${ac.altitudeFeet ?: "—"} ft · ${ac.groundSpeedKnots ?: "—"} kt",
                         icon = icon,
@@ -179,18 +200,19 @@ private fun formatPosition(lat: Double?, lon: Double?): String? {
 private fun DomainLatLng.toGoogleLatLng(): LatLng = LatLng(latitude, longitude)
 
 /**
- * Render a vector drawable into a bitmap-backed [BitmapDescriptor] for use as a
- * Google Maps marker icon. Optional [tint] re-colours the drawable, which lets
- * the marker follow Material 3 Dynamic Color.
+ * Render a vector drawable into a fresh [Bitmap], optionally re-coloured. The
+ * bitmap is owned by the caller so it can be recycled when no longer needed —
+ * Google Maps holds an internal copy via [BitmapDescriptorFactory.fromBitmap],
+ * so the original can be safely released.
  */
-private fun vectorToBitmapDescriptor(
+private fun createTintedBitmap(
     context: Context,
     @DrawableRes resId: Int,
-    @ColorInt tint: Int? = null,
-): BitmapDescriptor {
+    @ColorInt tint: Int,
+): Bitmap {
     val drawable = ContextCompat.getDrawable(context, resId)
         ?: error("Drawable resource $resId not found")
-    if (tint != null) drawable.setTint(tint)
+    drawable.setTint(tint)
 
     val width = drawable.intrinsicWidth.coerceAtLeast(1)
     val height = drawable.intrinsicHeight.coerceAtLeast(1)
@@ -198,5 +220,5 @@ private fun vectorToBitmapDescriptor(
 
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     drawable.draw(Canvas(bitmap))
-    return BitmapDescriptorFactory.fromBitmap(bitmap)
+    return bitmap
 }
