@@ -101,9 +101,30 @@ dump1090 --raw > captured_messages.txt
 - No DI framework — `ViewModelProvider.Factory` injects collaborators directly to keep
   the educational footprint minimal.
 - Google Maps SDK for Android (`maps-compose`).
-- API key managed via `secrets-gradle-plugin`; put `MAPS_API_KEY=...` in
-  `local.properties` (gitignored). A placeholder `local.defaults.properties` keeps
-  builds green before the key is set.
+
+### Maps API key
+
+The map view requires a Google Maps API key. The key is read at build time from
+`local.properties` (gitignored) by the `secrets-gradle-plugin` and substituted into
+`AndroidManifest.xml` as `${MAPS_API_KEY}`.
+
+1. Visit the [Google Cloud Console](https://console.cloud.google.com/google/maps-apis),
+   create or select a project, and enable **Maps SDK for Android**.
+2. Create an API key under **Credentials → Create credentials → API key**. You can
+   optionally restrict it to your debug keystore SHA-1 + the application id
+   `com.ayakix.pocketradar`.
+3. Open `local.properties` at the repository root (Android Studio creates it
+   automatically on first sync; otherwise `touch local.properties`) and add a line
+   with your key:
+
+   ```properties
+   MAPS_API_KEY=AIza...your_actual_key_here
+   ```
+
+`local.properties` is in `.gitignore`, so the key never leaves your machine. If the
+key is missing, the build still succeeds (the placeholder in `local.defaults.properties`
+is used), but the map tiles refuse to load at runtime — you will see a blank grey
+canvas with the markers floating on top.
 
 ## Development phases
 
