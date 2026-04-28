@@ -56,8 +56,8 @@ class RadarForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = intent?.getStringExtra(EXTRA_MODE)?.toMode() ?: SourceMode.REPLAY
-        startInForeground(mode)
-        startCollecting(mode)
+        promoteToForeground(mode)
+        startCollecting(mode, startId)
         startNotificationUpdates(mode)
         sourceState.value = SourceState(mode = mode, running = true)
         return START_NOT_STICKY
@@ -71,7 +71,7 @@ class RadarForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun startCollecting(mode: SourceMode) {
+    private fun startCollecting(mode: SourceMode, startId: Int) {
         collectJob?.cancel()
         val source = mode.toMessageSource(applicationContext)
         collectJob = scope.launch {
@@ -82,7 +82,10 @@ class RadarForegroundService : Service() {
             } catch (t: Throwable) {
                 Log.e(TAG, "Stream failed", t)
                 app.postError(t.userMessage(mode))
-                stopSelf()
+                // stopSelf(startId) — only stops the service if no newer
+                // onStartCommand has arrived since this collect was launched.
+                // Bare stopSelf() would race against a fresh mode switch.
+                stopSelf(startId)
             }
         }
     }
@@ -99,13 +102,19 @@ class RadarForegroundService : Service() {
         }
     }
 
-    private fun startInForeground(mode: SourceMode) {
+    /**
+     * Promote this service to foreground status (or, if already promoted,
+     * refresh the persistent notification with the current mode). Calling
+     * `startForeground` repeatedly on a live service is allowed by Android
+     * and just updates the notification.
+     */
+    private fun promoteToForeground(mode: SourceMode) {
         val notification = buildNotification(mode, aircraftCount = 0)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)

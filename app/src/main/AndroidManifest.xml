@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- dataSync, not connectedDevice. We talk to rtl_tcp over a localhost
+         TCP socket; the USB / dongle ownership lives in the SDR driver app's
+         own process, not ours. connectedDevice would require BLUETOOTH_*,
+         NFC, or an approved UsbManager.requestPermission, none of which we
+         hold. dataSync needs only the matching FGS permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -29,6 +34,6 @@
         <service
             android:name=".service.RadarForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

@@ -191,14 +191,19 @@ private fun SourceControlBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val replaySelected = state.running && state.mode == SourceMode.REPLAY
+                val liveSelected = state.running && state.mode == SourceMode.LIVE
                 FilterChip(
-                    selected = state.running && state.mode == SourceMode.REPLAY,
-                    onClick = onReplay,
+                    selected = replaySelected,
+                    // Guard against re-tapping the already-selected chip:
+                    // FilterChip fires onClick on every tap, which would
+                    // restart the running source for no reason.
+                    onClick = { if (!replaySelected) onReplay() },
                     label = { Text("Replay") },
                 )
                 FilterChip(
-                    selected = state.running && state.mode == SourceMode.LIVE,
-                    onClick = onLive,
+                    selected = liveSelected,
+                    onClick = { if (!liveSelected) onLive() },
                     label = { Text("Live (rtl_tcp)") },
                 )
                 AssistChip(
