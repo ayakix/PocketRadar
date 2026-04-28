@@ -46,7 +46,13 @@ class IqDemodulator(
      * overlapping buffers and want to deduplicate.
      */
     fun demodulate(iq: ByteArray): List<DetectedFrame> {
-        require(iq.size % 2 == 0) { "I/Q buffer must have an even byte count" }
+        // TCP reads from rtl_tcp can split an I/Q sample pair across two
+        // chunks, so an odd-length buffer is normal in production. The
+        // magnitude routines floor to (size / 2) samples, silently dropping
+        // a trailing single byte; the caller (RtlTcpMessageSource) keeps
+        // that byte in its carry-over tail and re-combines it on the next
+        // chunk so the I/Q pair gets restored.
+        if (iq.size < 2) return emptyList()
         val mag = if (sampleRateHz == 2_400_000) decimateAndMagnitude24To20(iq)
         else magnitudeAt20(iq)
         return demodulateAt2Mhz(mag)
