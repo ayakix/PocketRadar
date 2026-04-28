@@ -1,15 +1,18 @@
 package com.ayakix.pocketradar.radio
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -32,6 +35,12 @@ class RtlTcpClient(
     private val readBufferSize: Int = 16 * 1024,
     /** TCP connect timeout in milliseconds. */
     private val connectTimeoutMillis: Int = 5_000,
+    /**
+     * Socket read timeout (ms). Set to a non-zero value so that
+     * `InputStream.read()` returns periodically and the [samples] flow can
+     * observe coroutine cancellation. Default: 1 s.
+     */
+    private val readPollTimeoutMillis: Int = 1_000,
 ) : Closeable {
 
     private var socket: Socket? = null
@@ -48,26 +57,34 @@ class RtlTcpClient(
      */
     suspend fun connect(): ServerInfo = withContext(Dispatchers.IO) {
         val s = Socket()
-        s.connect(InetSocketAddress(host, port), connectTimeoutMillis)
-        s.tcpNoDelay = true
+        try {
+            s.connect(InetSocketAddress(host, port), connectTimeoutMillis)
+            s.tcpNoDelay = true
+            s.soTimeout = readPollTimeoutMillis
 
-        val inp = DataInputStream(s.getInputStream())
-        val out = DataOutputStream(s.getOutputStream())
+            val inp = DataInputStream(s.getInputStream())
+            val out = DataOutputStream(s.getOutputStream())
 
-        // --- Read the 12-byte header ---
-        val magic = ByteArray(4)
-        inp.readFully(magic)
-        val magicAscii = String(magic, Charsets.US_ASCII)
-        require(magicAscii == RtlTcpProtocol.MAGIC) {
-            "Bad rtl_tcp magic: expected '${RtlTcpProtocol.MAGIC}', got '$magicAscii'"
+            // --- Read the 12-byte header ---
+            val magic = ByteArray(4)
+            inp.readFully(magic)
+            val magicAscii = String(magic, Charsets.US_ASCII)
+            require(magicAscii == RtlTcpProtocol.MAGIC) {
+                "Bad rtl_tcp magic: expected '${RtlTcpProtocol.MAGIC}', got '$magicAscii'"
+            }
+            val tunerType = inp.readInt()
+            val gainStages = inp.readInt()
+
+            socket = s
+            input = inp
+            output = out
+            ServerInfo(tunerType, gainStages).also { serverInfo = it }
+        } catch (t: Throwable) {
+            // Don't leak the OS socket if anything between connect() and the
+            // header parse fails (bad magic, EOF, timeout, etc.).
+            runCatching { s.close() }
+            throw t
         }
-        val tunerType = inp.readInt()
-        val gainStages = inp.readInt()
-
-        socket = s
-        input = inp
-        output = out
-        ServerInfo(tunerType, gainStages).also { serverInfo = it }
     }
 
     /** Apply the standard ADS-B tuning (1090 MHz, 2.4 MS/s, manual gain). */
@@ -96,14 +113,27 @@ class RtlTcpClient(
 
     /**
      * I/Q sample stream. Each emitted [ByteArray] is a slice of u8 I, u8 Q
-     * pairs (length is always even). The flow runs on [Dispatchers.IO] and
-     * completes when the server closes the socket or the collector cancels.
+     * pairs. The flow runs on [Dispatchers.IO] and completes when the server
+     * closes the socket.
+     *
+     * Cancellation: `InputStream.read()` is a JVM blocking call that does not
+     * observe Kotlin coroutine cancellation directly. We use the socket's
+     * `soTimeout` (configured at [connect]) to wake the read every
+     * [readPollTimeoutMillis], so cancellation takes effect within that window.
+     * For a hard cancel, also call [close] from outside the collector — that
+     * will close the socket and unblock any in-progress read with a
+     * `SocketException` immediately.
      */
     fun samples(): Flow<ByteArray> = flow {
         val inp = checkNotNull(input) { "Not connected; call connect() first" }
         val buffer = ByteArray(readBufferSize)
-        while (true) {
-            val read = inp.read(buffer)
+        while (currentCoroutineContext().isActive) {
+            val read = try {
+                inp.read(buffer)
+            } catch (_: SocketTimeoutException) {
+                // soTimeout fired; loop back so cancellation can be observed.
+                continue
+            }
             if (read < 0) break // server closed
             // Defensive copy: callers must not see a buffer that mutates beneath them.
             emit(buffer.copyOfRange(0, read))

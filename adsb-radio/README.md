@@ -88,8 +88,12 @@ sample stream's `Flow` semantics.
 ## Dependencies
 
 - `kotlinx-coroutines-core` (`Flow`, `Dispatchers.IO`)
-- (Phase 3B will add a dependency on `:adsb-decoder` for the `IcaoAddress` /
-  hex types it produces.)
+
+This module does **not** depend on `:adsb-decoder`. The Phase 3B demodulator
+will emit hex frames as plain `String`s (one per Mode S frame), and `:app`
+wires them into `:adsb-decoder` separately. Keeping the dependency arrows
+strictly `:app → {:adsb-radio, :adsb-decoder}` lets either module evolve
+without rebuilding the other.
 
 ## License
 

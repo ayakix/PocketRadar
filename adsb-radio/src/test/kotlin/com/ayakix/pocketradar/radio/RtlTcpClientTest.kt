@@ -38,7 +38,9 @@ class RtlTcpClientTest {
         val server = startServer { client ->
             client.writeHelloHeader(tunerType = 6, gainStages = 29) // R828D, 29 stages
             // Hold the connection open briefly so the client can read.
-            Thread.sleep(50)
+            // Block until the client closes the socket (read() returns -1).
+            // More reliable than a fixed sleep on slow CI runners.
+            client.getInputStream().read()
         }
 
         RtlTcpClient(host = "localhost", port = server.port).use { rtl ->
@@ -58,7 +60,9 @@ class RtlTcpClientTest {
             out.writeInt(5)
             out.writeInt(29)
             out.flush()
-            Thread.sleep(50)
+            // Block until the client closes the socket (read() returns -1).
+            // More reliable than a fixed sleep on slow CI runners.
+            client.getInputStream().read()
         }
 
         val client = RtlTcpClient(host = "localhost", port = server.port)
@@ -81,7 +85,9 @@ class RtlTcpClientTest {
             val inp = DataInputStream(client.getInputStream())
             inp.readFully(received)
             captured.countDown()
-            Thread.sleep(50)
+            // Block until the client closes the socket (read() returns -1).
+            // More reliable than a fixed sleep on slow CI runners.
+            client.getInputStream().read()
         }
 
         RtlTcpClient(host = "localhost", port = server.port).use { rtl ->
@@ -111,7 +117,9 @@ class RtlTcpClientTest {
             val inp = DataInputStream(client.getInputStream())
             inp.readFully(received)
             captured.countDown()
-            Thread.sleep(50)
+            // Block until the client closes the socket (read() returns -1).
+            // More reliable than a fixed sleep on slow CI runners.
+            client.getInputStream().read()
         }
 
         RtlTcpClient(host = "localhost", port = server.port).use { rtl ->
@@ -144,8 +152,10 @@ class RtlTcpClientTest {
             val out = client.getOutputStream()
             out.write(payload)
             out.flush()
-            // Close after the payload so the client's flow completes.
-            Thread.sleep(50)
+            // Handler returns immediately so FakeServer.use { ... } closes the
+            // socket; the client's flow then sees EOF and toList() completes.
+            // (Don't try to wait for the client to close first — that deadlocks
+            // because the client is waiting for *our* close to end the flow.)
         }
 
         val collected = withContext(Dispatchers.IO) {
