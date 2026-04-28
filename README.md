@@ -255,7 +255,7 @@ app supports both fixture-replay and live RTL-SDR reception.
 
 ## License
 
-Not yet decided. Will be set to MIT or Apache 2.0 before public release.
+[MIT](./LICENSE) — Copyright (c) 2026 ayakix.
 
 ## References
 
