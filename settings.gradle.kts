@@ -28,4 +28,4 @@ plugins {
 
 rootProject.name = "PocketRadar"
 
-include(":adsb-decoder", ":app")
+include(":adsb-decoder", ":adsb-radio", ":app")
