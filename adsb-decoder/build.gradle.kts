@@ -5,9 +5,8 @@ plugins {
 group = "com.ayakix.pocketradar"
 version = "0.1.0-SNAPSHOT"
 
-repositories {
-    mavenCentral()
-}
+// Repositories are declared centrally in settings.gradle.kts via
+// dependencyResolutionManagement.
 
 dependencies {
     testImplementation(kotlin("test"))
