@@ -17,8 +17,17 @@ package com.ayakix.pocketradar.radio
  */
 object RtlTcpProtocol {
 
-    /** Default rtl_tcp listening port. */
-    const val DEFAULT_PORT: Int = 1234
+    /**
+     * Default rtl_tcp listening port. Note: librtlsdr's upstream `rtl_tcp`
+     * binary uses **1234**, but Martin Marinov's Android port (the "SDR
+     * driver" app, package `marto.rtl_tcp_andro`) defaults to **14423** to
+     * avoid collisions with other Android apps. Since PocketRadar is
+     * primarily paired with the Android driver, we follow its default so
+     * users can run the driver app without editing its launch arguments.
+     * Override via the [RtlTcpClient] / [RtlTcpMessageSource] constructor
+     * when targeting the upstream binary.
+     */
+    const val DEFAULT_PORT: Int = 14423
 
     /** Size of the server's hello header in bytes. */
     const val HEADER_SIZE: Int = 12
