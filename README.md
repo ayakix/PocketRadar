@@ -73,25 +73,25 @@ Android (USB-C) --[powered OTG adapter]-- RTL-SDR Blog V4 --[RG58 coax]-- 1090 M
 ### On the Android device
 - Android 14 or later (`minSdk = 34`).
 - Google Play services with a Maps API key configured (see Build environment below).
-- **For Phase 3 only** — the **SDR driver** app installed and bound to the dongle:
+- **For live reception only** — the **SDR driver** app installed and bound to the dongle:
   - Google Play: <https://play.google.com/store/apps/details?id=marto.rtl_tcp_andro>
   - Package name: `marto.rtl_tcp_andro` (formerly known as "RTL2832U Driver")
   - Source: <https://github.com/martinmarinov/rtl_tcp_andro->
   - On first connection, accept the USB permission dialog and choose to open the dongle
     with this app by default.
-  - Phase 2 replays a captured fixture and does not require the SDR driver app or any
-    USB hardware.
+  - The captured-fixture replay does not require the SDR driver app or any
+    USB hardware — skip this if you only want the offline demo.
 
-### On macOS (development and Phase 2 fixture capture)
+### On macOS (development and fixture capture for the demo replay)
 ```sh
 brew install rtl-sdr dump1090-fa   # Installed binary is named `dump1090`
 rtl_test -t                        # Should report "RTL-SDR Blog V4 Detected"
 dump1090 --interactive             # Live decoding sanity check (terminal UI)
 
-# Capture raw Mode S messages for Phase 2 test fixtures:
+# Capture raw Mode S messages for the demo replay fixture:
 dump1090 --raw > captured_messages.txt
 # Stop with Ctrl-C once enough messages have been recorded, then copy the file
-# into app/src/test/resources/ and app/src/main/assets/ for replay.
+# into adsb-decoder/src/test/resources/ and app/src/main/assets/ for replay.
 ```
 
 ### Build environment
@@ -127,20 +127,15 @@ key is missing, the build still succeeds (the placeholder in `local.defaults.pro
 is used), but the map tiles refuse to load at runtime — you will see a blank grey
 canvas with the markers floating on top.
 
-## Development phases
+## Modules
 
-The project is implemented **back-to-front** so that each phase produces a working,
-testable artifact.
-
-| Phase | Scope | Hardware required |
+| Module | Role | Hardware required |
 |---|---|---|
-| **Phase 1** | Mode S hex → `Aircraft` decoder. CRC-24, DF=17 parser, Type Code branches, CPR pair handling. JUnit-driven, runs on the JVM. | None |
-| **Phase 2** | UI + Google Maps. Replays a captured-message fixture (from `dump1090 --raw`) through the Phase 1 decoder and renders aircraft on the map. Runs on emulator or device. | None (uses captured fixture) |
-| **Phase 3** | Real-hardware integration. TCP connection to the **SDR driver** app's `rtl_tcp` server, I/Q stream → Mode S frames in Kotlin (preamble detection, PPM demodulation), wired into the Phase 1 decoder and Phase 2 UI for end-to-end live tracking. | Android device + RTL-SDR + antenna |
+| **`:adsb-decoder`** | Pure Kotlin/JVM library. Mode S hex → `Aircraft`: CRC-24, DF=17 parser, Type Code branches, CPR pair handling. JUnit-driven, runs on the JVM. | None |
+| **`:adsb-radio`** | Pure Kotlin/JVM library. `rtl_tcp` client + I/Q demodulator (preamble detection, PPM); emits `Flow<String>` of Mode S hex. | None for tests; Android device + RTL-SDR + antenna for live operation |
+| **`:app`** | Android UI: Compose + Google Maps, foreground service, source toggle (captured-fixture replay / live `rtl_tcp`). | None for the replay demo; full hardware stack for live |
 
-The detailed task breakdown lives in `plan.md`.
-
-### Running the live receiver (Phase 3)
+### Running the live receiver
 
 1. Plug the RTL-SDR Blog V4 into the Android device through a powered OTG cable.
    Connect the antenna to the SMA port.
@@ -165,7 +160,7 @@ in the control bar.
 
 ## ADS-B / Mode S Protocol Reference
 
-This section is a quick map of what the Phase 1 decoder needs to understand. It is
+This section is a quick map of what the decoder needs to understand. It is
 intentionally compact; *The 1090 Megahertz Riddle* is the long-form reference.
 
 ### What an ADS-B message is
@@ -218,7 +213,7 @@ The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`�
   reconstructs lat/lon by comparing the two encodings (zone-index trick).
 - **Locally unambiguous decoding** can use a known reference position (the receiver's
   location) and decode a single frame, valid within ~180 nm of the reference.
-- Phase 1 implements **only the global (even/odd) variant** to keep the educational scope
+- We implement **only the global (even/odd) variant** to keep the educational scope
   tight; locally-referenced decoding can be added later.
 
 ### CRC-24 in Mode S — the short version
@@ -231,27 +226,27 @@ The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`�
 
 ## Status
 
-**Phases 1, 2 and 3 are complete.** All three modules are on `main` and the
-app supports both fixture-replay and live RTL-SDR reception.
+`main` is v1: all three modules are functional and integrated. The app supports
+both captured-fixture replay and live RTL-SDR reception.
 
-- **Phase 1 — `:adsb-decoder`** — pure Kotlin/JVM library decoding Mode S DF=17 messages
-  into structured `Aircraft` records. Covers CRC-24 verification, identification (TC 1–4),
-  airborne position with CPR pair decoding (TC 9–18), and ground-speed velocity (TC 19).
-  33 JUnit tests pass against both the canonical pyModeS sample and a real RTL-SDR
-  capture from Tokyo (15 unique aircraft).
-- **Phase 2 — `:app`** — Android app rendering aircraft on Google Maps. Replays the
-  captured Mode S fixture through the Phase 1 decoder, draws Material flight markers
-  rotated by track angle, per-aircraft polyline trails (max 100 points), and a
-  `ModalBottomSheet` with full aircraft details on tap. Material 3 Dynamic Color follows
-  the device wallpaper on Android 12+ and reacts to dark / light. Stale aircraft fall
-  off the map after 60 seconds.
-- **Phase 3 — `:adsb-radio` + `:app` integration** — pure Kotlin/JVM `:adsb-radio`
-  module hosts the rtl_tcp client and the I/Q demodulator (dump1090-style: magnitude,
-  6:5 decimation 2.4 → 2.0 MS/s, neighbour-comparison preamble detection, PPM bit
-  slicing). `:app` adds a foreground service (`FOREGROUND_SERVICE_TYPE_DATA_SYNC`)
-  that owns the receive coroutine and feeds the shared `AircraftStore`, plus a
-  source-mode toggle on the map (Replay / Live / Stop). Live mode is fed by
-  `RtlTcpMessageSource` against the Android **SDR driver** app on `localhost:14423`.
+- **`:adsb-decoder`** — Mode S DF=17 decoder. Covers CRC-24 verification,
+  identification (TC 1–4), airborne position with CPR pair decoding (TC 9–18),
+  and ground-speed velocity (TC 19). 33 JUnit tests pass against the canonical
+  pyModeS sample plus a real RTL-SDR capture from Tokyo (15 unique aircraft).
+- **`:adsb-radio`** — `rtl_tcp` client + dump1090-style I/Q demodulator
+  (magnitude via L1 approximation, 6:5 decimation 2.4 → 2.0 MS/s,
+  neighbour-comparison preamble detection, PPM bit slicing). Emits
+  `Flow<String>` of Mode S hex. 7 JUnit tests covering an in-process fake
+  rtl_tcp server and a 23 MB real I/Q capture.
+- **`:app`** — Compose + Google Maps. Material flight markers rotate with
+  track angle, per-aircraft polyline trails (max 100 points), and a
+  `ModalBottomSheet` exposes the full aircraft record on tap. Material 3
+  Dynamic Color follows the device wallpaper on Android 12+ and reacts to
+  dark / light. Stale aircraft fall off after 60 seconds. A foreground
+  service (`FOREGROUND_SERVICE_TYPE_DATA_SYNC`) owns the receive coroutine
+  and feeds the shared `AircraftStore`. A top-of-screen toggle picks between
+  captured-fixture replay and live `rtl_tcp` reception against the Android
+  **SDR driver** app on `localhost:14423`.
 
 ## License
 
