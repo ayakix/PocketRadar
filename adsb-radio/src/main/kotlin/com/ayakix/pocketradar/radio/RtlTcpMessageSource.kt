@@ -21,6 +21,10 @@ import kotlinx.coroutines.flow.flowOn
  * Frame integrity: the demodulator is intentionally simple and emits many
  * false-positive frames; CRC verification (and therefore filtering) is the
  * consumer's responsibility — typically `AdsbDecoder` from `:adsb-decoder`.
+ *
+ * Errors: if [RtlTcpClient.connect] fails (server unreachable, wrong magic,
+ * etc.) the exception propagates to the collector as a flow terminal error.
+ * Callers should wrap the collection site with `.catch { ... }` or equivalent.
  */
 class RtlTcpMessageSource(
     private val host: String = "localhost",
@@ -33,14 +37,21 @@ class RtlTcpMessageSource(
             rtl.connect()
             rtl.applyAdsbDefaults()
 
-            // I/Q chunks arrive at ~16 KB at a time. We keep a rolling tail of
+            // I/Q chunks arrive in ~16 KB bursts. We keep a rolling tail of
             // the previous chunk so frames that straddle a chunk boundary
-            // still get detected — without this, the first ~120 μs after every
-            // chunk break would be invisible to the preamble detector.
+            // still get detected. To avoid re-emitting frames that lie
+            // entirely inside the tail (already detected last time), we only
+            // emit frames whose preamble starts at sample offset >= tail size
+            // (in post-decimation samples).
             var tail = ByteArray(0)
             rtl.samples().collect { chunk ->
                 val combined = tail + chunk
-                demodulator.demodulate(combined).forEach { emit(it) }
+                val tailOutputSamples = demodulator.outputSamplesFor(tail.size)
+                demodulator.demodulate(combined).forEach { detected ->
+                    if (detected.sampleOffset >= tailOutputSamples) {
+                        emit(detected.hex)
+                    }
+                }
                 tail = if (combined.size > TAIL_BYTES)
                     combined.copyOfRange(combined.size - TAIL_BYTES, combined.size)
                 else combined
@@ -51,7 +62,7 @@ class RtlTcpMessageSource(
     companion object {
         /**
          * Bytes carried over between consecutive I/Q chunks. One Mode S frame
-         * is at most 120 μs (8 μs preamble + 112 μs payload). At 2.4 MS/s
+         * spans at most 120 μs (8 μs preamble + 112 μs payload). At 2.4 MS/s
          * that's ~288 samples × 2 bytes = 576 bytes; round up to 1 KB for
          * margin against re-detection lag and decimation rounding.
          */
