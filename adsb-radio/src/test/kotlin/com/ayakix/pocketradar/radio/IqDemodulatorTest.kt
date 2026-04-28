@@ -7,11 +7,8 @@ import kotlin.test.assertTrue
 /**
  * Smoke tests against the real RTL-SDR capture in `iq_capture.bin` (~5 s of
  * 2.4 MS/s I/Q from a Tokyo session). The demodulator is intentionally simple
- * and is expected to emit a lot of false-positive frame candidates; the bar
- * here is "produces enough CRC-valid frames for `:app` to look meaningful".
- *
- * CRC verification is delegated to `AdsbDecoder` from `:adsb-decoder` so we
- * avoid duplicating the CRC-24 implementation in two modules.
+ * and is expected to emit many false-positive frame candidates; CRC verification
+ * (delegated to `AdsbDecoder` from `:adsb-decoder`) filters the noise.
  */
 class IqDemodulatorTest {
 
@@ -26,19 +23,20 @@ class IqDemodulatorTest {
         println("Input: ${iq.size} bytes (~${"%.2f".format(seconds)} s @ ${demod.sampleRateHz} Hz)")
         println("Frame candidates detected: ${frames.size}")
 
-        val byDf = frames.groupingBy { (it.substring(0, 2).toInt(16)) ushr 3 }.eachCount()
+        val byDf = frames.groupingBy { (it.hex.substring(0, 2).toInt(16)) ushr 3 }.eachCount()
         println("DF distribution (raw, before CRC):")
         byDf.toSortedMap().forEach { (df, count) -> println("  DF=$df : $count") }
 
         assertTrue(frames.isNotEmpty(), "Expected at least one frame candidate, got 0")
         assertTrue(
-            frames.all { it.length == 14 || it.length == 28 },
-            "Frame lengths must be 14 (short) or 28 (long); got: ${frames.map { it.length }.distinct()}",
+            frames.all { it.hex.length == 14 || it.hex.length == 28 },
+            "Frame lengths must be 14 (short) or 28 (long); got: " +
+                frames.map { it.hex.length }.distinct(),
         )
     }
 
     @Test
-    fun `at least some demodulated frames pass CRC verification`() {
+    fun `demodulated frames pass CRC verification at the expected rate`() {
         val iq = loadFixture("/iq_capture.bin")
         val demod = IqDemodulator()
         val frames = demod.demodulate(iq)
@@ -48,8 +46,8 @@ class IqDemodulatorTest {
         val decoder = AdsbDecoder(staleAfterMillis = Long.MAX_VALUE / 2)
         var validAdsb = 0
         var t = 0L
-        for (hex in frames) {
-            if (decoder.ingest(hex, t) != null) validAdsb++
+        for (f in frames) {
+            if (decoder.ingest(f.hex, t) != null) validAdsb++
             t += 1
         }
 
@@ -66,12 +64,16 @@ class IqDemodulatorTest {
             )
         }
 
-        // Bar: at least one CRC-valid ADS-B frame in 5 s of capture. Real
-        // numbers will be much higher once the demodulator is tuned, but this
-        // proves the wiring (preamble → PPM → hex → CRC) end-to-end.
+        // Bar tightened from `>= 1` to `>= 3`. The fixture is deterministic,
+        // so a regression that breaks the demodulator down to 1–2 frames
+        // would have slipped through the looser check.
         assertTrue(
-            validAdsb >= 1,
-            "Expected at least 1 CRC-valid DF=17 frame, got $validAdsb out of ${frames.size} candidates",
+            validAdsb >= 3,
+            "Expected ≥ 3 CRC-valid DF=17 frames, got $validAdsb out of ${frames.size} candidates",
+        )
+        assertTrue(
+            snapshot.size >= 2,
+            "Expected ≥ 2 unique aircraft tracked end-to-end, got ${snapshot.size}",
         )
     }
 

@@ -40,13 +40,22 @@ class IqDemodulator(
 
     /**
      * Demodulate a complete I/Q buffer and return all Mode S frames found
-     * inside, expressed as lowercase hex strings (no `*` or `;` wrappers).
+     * inside. Each [DetectedFrame] carries both the lowercase hex string and
+     * the sample offset (in the **post-decimation** magnitude buffer at
+     * 2 MS/s) where the preamble starts — useful for callers that splice
+     * overlapping buffers and want to deduplicate.
      */
-    fun demodulate(iq: ByteArray): List<String> {
+    fun demodulate(iq: ByteArray): List<DetectedFrame> {
         require(iq.size % 2 == 0) { "I/Q buffer must have an even byte count" }
         val mag = if (sampleRateHz == 2_400_000) decimateAndMagnitude24To20(iq)
         else magnitudeAt20(iq)
         return demodulateAt2Mhz(mag)
+    }
+
+    /** Number of post-decimation samples in [byteCount] input bytes. */
+    fun outputSamplesFor(byteCount: Int): Int {
+        val inputSamples = byteCount / 2
+        return if (sampleRateHz == 2_400_000) inputSamples * 5 / 6 else inputSamples
     }
 
     // ---- Magnitude --------------------------------------------------------------
@@ -89,8 +98,8 @@ class IqDemodulator(
 
     // ---- Demodulation at 2 MS/s -------------------------------------------------
 
-    private fun demodulateAt2Mhz(mag: IntArray): List<String> {
-        val results = mutableListOf<String>()
+    private fun demodulateAt2Mhz(mag: IntArray): List<DetectedFrame> {
+        val results = mutableListOf<DetectedFrame>()
         val maxStart = mag.size - PREAMBLE_SAMPLES - LONG_PAYLOAD_SAMPLES
         var i = 0
         while (i < maxStart) {
@@ -101,11 +110,11 @@ class IqDemodulator(
                     i++
                     continue
                 }
-                results += frame
-                // Skip past this frame so a preamble inside its payload doesn't
-                // get treated as a fresh message. 2 samples / bit.
-                val payloadBits = frame.length * 4
-                i = payloadStart + payloadBits * 2 + 1
+                results += DetectedFrame(sampleOffset = i, hex = frame)
+                // Always skip the full long-frame window we actually consumed,
+                // even when the trimmed result was a 56-bit short frame —
+                // otherwise we'd re-scan the back half of the same payload.
+                i = payloadStart + LONG_PAYLOAD_SAMPLES + 1
             } else {
                 i++
             }
