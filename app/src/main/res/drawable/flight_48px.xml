@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <!-- Tint is applied at runtime in MapScreen.vectorToBitmapDescriptor() so the
+       marker can follow the current Material 3 colour scheme. -->
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M285,880L285,797L409,711L409,539L80,672L80,570L409,339L409,151Q409,122 430,101Q451,80 480,80Q509,80 530,101Q551,122 551,151L551,339L880,570L880,672L551,539L551,711L674,797L674,880L480,821L285,880Z"/>
+</vector>
