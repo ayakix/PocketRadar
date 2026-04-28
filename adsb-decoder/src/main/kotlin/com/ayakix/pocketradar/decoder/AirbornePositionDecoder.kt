@@ -1,10 +1,13 @@
 package com.ayakix.pocketradar.decoder
 
 /**
- * Extracts altitude and CPR-encoded lat/lon from an Airborne Position message.
+ * Extracts altitude and CPR-encoded lat/lon from a barometric-altitude Airborne
+ * Position message (TC 9..18). GNSS-altitude position messages (TC 20..22) share
+ * the same ME layout but are not yet wired into [AdsbDecoder]; they will be
+ * added in a later phase.
  *
  * 56-bit ME layout (DO-260 §2.2.3.2.3):
- *   bit  0..4   Type Code (9..18 baro alt, 20..22 GNSS alt)
+ *   bit  0..4   Type Code (9..18)
  *   bit  5..6   Surveillance Status
  *   bit  7      Single Antenna Flag
  *   bit  8..19  Altitude (12 bits — Q-bit encoding handled below)
@@ -16,8 +19,8 @@ package com.ayakix.pocketradar.decoder
 object AirbornePositionDecoder {
 
     fun decode(frame: AdsbFrame): AirbornePosition {
-        require(frame.typeCode in 9..18 || frame.typeCode in 20..22) {
-            "Airborne position uses TC 9..18 or 20..22, got TC=${frame.typeCode}"
+        require(frame.typeCode in 9..18) {
+            "Airborne position (baro alt) uses TC 9..18, got TC=${frame.typeCode}"
         }
         // Pack the 56-bit ME (frame bytes 4..10) into the low 56 bits of a Long.
         val raw = frame.raw

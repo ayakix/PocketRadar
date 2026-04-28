@@ -44,13 +44,7 @@ class AdsbDecoder(
         when (frame.typeCode) {
             in 1..4 -> state.callsign = IdentificationDecoder.decodeCallsign(frame)
             in 9..18 -> updatePosition(state, frame, timestampMillis)
-            19 -> {
-                // Subtypes 3..4 (airspeed) are unsupported in Phase 1; swallow the
-                // require() failure rather than aborting the whole stream.
-                runCatching { AirborneVelocityDecoder.decode(frame) }
-                    .getOrNull()
-                    ?.let { state.velocity = it }
-            }
+            19 -> AirborneVelocityDecoder.decode(frame)?.let { state.velocity = it }
             // Other TCs (5..8 surface, 20..22 GNSS-alt position, 23..31 status)
             // are intentionally ignored for Phase 1.
         }

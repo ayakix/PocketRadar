@@ -1,6 +1,5 @@
 package com.ayakix.pocketradar.decoder
 
-import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -25,7 +24,12 @@ import kotlin.math.sqrt
  */
 object AirborneVelocityDecoder {
 
-    fun decode(frame: AdsbFrame): AirborneVelocity {
+    /**
+     * @return decoded velocity, or `null` if the frame is a ground-speed message
+     *   whose EW or NS field carries the "no velocity information" sentinel
+     *   (encoded value = 0), or if the subtype is not a ground-speed one.
+     */
+    fun decode(frame: AdsbFrame): AirborneVelocity? {
         require(frame.typeCode == 19) {
             "Airborne velocity uses TC=19, got TC=${frame.typeCode}"
         }
@@ -36,15 +40,20 @@ object AirborneVelocityDecoder {
         }
 
         val subtype = ((me ushr 48) and 0x7L).toInt()
-        require(subtype in 1..2) {
-            "Phase 1 only supports ground-speed subtypes (1 or 2), got subtype=$subtype"
-        }
+        // Subtypes 3..4 (airspeed-with-heading) need a different parser; Phase 1
+        // ignores them rather than throwing so callers can stream a mixed feed.
+        if (subtype !in 1..2) return null
         val multiplier = if (subtype == 2) 4 else 1
 
         val ewDir = ((me ushr 42) and 1L).toInt()
         val ewVRaw = ((me ushr 32) and 0x3FFL).toInt()
         val nsDir = ((me ushr 31) and 1L).toInt()
         val nsVRaw = ((me ushr 21) and 0x3FFL).toInt()
+
+        // Per DO-260B §2.2.3.2.6, an encoded value of 0 in either component is the
+        // "no velocity information available" sentinel. Without this guard, the
+        // (raw - 1) decode below would yield -1 kt and a meaningless track angle.
+        if (ewVRaw == 0 || nsVRaw == 0) return null
 
         // Spec: encoded value = velocity + 1, so subtract 1 to get the actual figure.
         // Direction bit flips the sign.

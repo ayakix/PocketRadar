@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 
 class AirborneVelocityDecoderTest {
 
@@ -13,6 +14,7 @@ class AirborneVelocityDecoderTest {
         val v = AirborneVelocityDecoder.decode(
             AdsbFrame("8d71c709990d620ab05c1c6efe5e".hexToByteArray())
         )
+        assertNotNull(v)
         assertEquals(363, v.groundSpeedKnots)
         assertNear(283.39, v.trackDegrees, 0.01)
         assertEquals(1408, v.verticalRateFpm)
@@ -25,6 +27,7 @@ class AirborneVelocityDecoderTest {
         val v = AirborneVelocityDecoder.decode(
             AdsbFrame("8d86da38990ca6804840055ab280".hexToByteArray())
         )
+        assertNotNull(v)
         assertEquals(165, v.groundSpeedKnots)
         assertNear(269.65, v.trackDegrees, 0.01)
         assertEquals(-960, v.verticalRateFpm)
@@ -37,6 +40,7 @@ class AirborneVelocityDecoderTest {
         val v = AirborneVelocityDecoder.decode(
             AdsbFrame("8da745059914132f108c1034f1d6".hexToByteArray())
         )
+        assertNotNull(v)
         assertEquals(375, v.groundSpeedKnots)
         assertNear(357.25, v.trackDegrees, 0.01)
         assertEquals(2176, v.verticalRateFpm)
