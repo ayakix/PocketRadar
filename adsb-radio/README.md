@@ -7,15 +7,15 @@ reception, streams I/Q samples, demodulates them into Mode S frames, and exposes
 the result as `Flow<String>` (hex). The downstream `adsb-decoder` then turns
 each hex frame into an `Aircraft`.
 
-## Status
+## Components
 
-| Phase | Component | State |
-|---|---|---|
-| **3A** | `RtlTcpClient` — rtl_tcp protocol client | ✅ implemented |
-| **3B** | `IqDemodulator` — I/Q → Mode S frames (PPM, preamble detection) | ✅ implemented |
-| **3B** | `RtlTcpMessageSource` — TCP + DSP → `Flow<String>` | ✅ implemented |
+| Class | Responsibility |
+|---|---|
+| `RtlTcpClient` | rtl_tcp protocol client: hello-header parse, control commands, raw I/Q stream |
+| `IqDemodulator` | I/Q magnitudes → preamble detection → PPM bit slicing → Mode S hex frames |
+| `RtlTcpMessageSource` | composes the two into a `Flow<String>` for downstream consumers |
 
-## Phase 3A: `RtlTcpClient`
+## `RtlTcpClient`
 
 A pure Kotlin/JVM client for the rtl_tcp wire format used by:
 - `librtlsdr`'s `rtl_tcp` binary (any platform), and
@@ -51,7 +51,7 @@ RtlTcpClient(host = "localhost").use { rtl ->
     rtl.applyAdsbDefaults()
 
     rtl.samples().collect { iqChunk ->
-        // iqChunk is interleaved u8 I, u8 Q. Phase 3B will demodulate this.
+        // iqChunk is interleaved u8 I, u8 Q; pass it to IqDemodulator.
         process(iqChunk)
     }
 }
@@ -74,7 +74,7 @@ the `use { ... }` block guarantees the socket is released even on exceptions.
 The full rtl_tcp command list lives in librtlsdr's `rtl_tcp.c`; only the
 ADS-B-relevant ones are exposed here.
 
-## Phase 3B: `IqDemodulator` and `RtlTcpMessageSource`
+## `IqDemodulator` and `RtlTcpMessageSource`
 
 `IqDemodulator` turns u8 I/Q bytes into Mode S hex frames using the dump1090
 algorithm internally:
@@ -114,9 +114,9 @@ source.stream().collect { hex ->
 ```
 
 The class chains `RtlTcpClient` and `IqDemodulator` and exposes the same
-`Flow<String>` interface as the Phase 2 `MockMessageSource`, so the `:app`
-module can switch between the captured fixture and live reception by
-swapping the source instance.
+`Flow<String>` interface as the captured-fixture `MockMessageSource` in
+`:app`, so the app module can switch between the fixture replay and live
+reception by swapping the source instance.
 
 ## Building and testing
 
@@ -135,9 +135,9 @@ sample stream's `Flow` semantics.
 
 - `kotlinx-coroutines-core` (`Flow`, `Dispatchers.IO`)
 
-This module does **not** depend on `:adsb-decoder`. The Phase 3B demodulator
-will emit hex frames as plain `String`s (one per Mode S frame), and `:app`
-wires them into `:adsb-decoder` separately. Keeping the dependency arrows
+This module does **not** depend on `:adsb-decoder`. The demodulator emits
+hex frames as plain `String`s (one per Mode S frame), and `:app` wires
+them into `:adsb-decoder` separately. Keeping the dependency arrows
 strictly `:app → {:adsb-radio, :adsb-decoder}` lets either module evolve
 without rebuilding the other.
 

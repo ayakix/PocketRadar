@@ -7,8 +7,8 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Common abstraction over the two message sources `:app` can collect from:
- * `MockMessageSource` (Phase 2 fixture replay) and `RtlTcpMessageSource`
- * (Phase 3B live `rtl_tcp`). Both already expose `fun stream(): Flow<String>`,
+ * `MockMessageSource` (captured-fixture replay) and `RtlTcpMessageSource`
+ * (live `rtl_tcp` reception). Both already expose `fun stream(): Flow<String>`,
  * so we just adapt them through a `fun interface`.
  */
 fun interface MessageSource {

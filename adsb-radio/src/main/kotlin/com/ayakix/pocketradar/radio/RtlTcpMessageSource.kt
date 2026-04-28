@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.flowOn
 /**
  * Live source of Mode S hex frames backed by an `rtl_tcp` server.
  *
- * Composes [RtlTcpClient] (Phase 3A — I/Q over TCP) with [IqDemodulator]
- * (Phase 3B — I/Q → hex) to produce a `Flow<String>` of demodulated frames.
- * It is a drop-in replacement for the Phase 2 `MockMessageSource`, so `:app`
- * can switch between the captured-fixture replay and live reception just by
+ * Composes [RtlTcpClient] (I/Q over TCP) with [IqDemodulator] (I/Q → hex)
+ * to produce a `Flow<String>` of demodulated frames. It is a drop-in
+ * replacement for the captured-fixture `MockMessageSource` in `:app`, so
+ * the app can switch between the offline replay and live reception just by
  * swapping the source instance.
  *
  * Lifecycle: each call to [stream] opens a fresh socket, applies the ADS-B
