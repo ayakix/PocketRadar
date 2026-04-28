@@ -5,8 +5,9 @@ plan.md
 .claude/
 CLAUDE.md
 
-# 一時キャプチャ（テスト fixture は adsb-decoder/src/test/resources/ で管理）
+# 一時キャプチャ（テスト fixture は adsb-decoder / adsb-radio の src/test/resources/ で管理）
 /captured_messages.txt
+/iq_capture.bin
 
 # Gradle / IntelliJ / Android Studio
 .gradle/

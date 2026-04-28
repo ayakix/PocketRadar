@@ -12,8 +12,8 @@ each hex frame into an `Aircraft`.
 | Phase | Component | State |
 |---|---|---|
 | **3A** | `RtlTcpClient` — rtl_tcp protocol client | ✅ implemented |
-| **3B** | `IqDemodulator` — I/Q → Mode S frames (PPM, preamble detection) | planned |
-| **3B** | `RtlTcpMessageSource` — TCP + DSP → `Flow<String>` | planned |
+| **3B** | `IqDemodulator` — I/Q → Mode S frames (PPM, preamble detection) | ✅ implemented |
+| **3B** | `RtlTcpMessageSource` — TCP + DSP → `Flow<String>` | ✅ implemented |
 
 ## Phase 3A: `RtlTcpClient`
 
@@ -71,6 +71,50 @@ the `use { ... }` block guarantees the socket is released even on exceptions.
 
 The full rtl_tcp command list lives in librtlsdr's `rtl_tcp.c`; only the
 ADS-B-relevant ones are exposed here.
+
+## Phase 3B: `IqDemodulator` and `RtlTcpMessageSource`
+
+`IqDemodulator` turns u8 I/Q bytes into Mode S hex frames using the dump1090
+algorithm internally:
+
+1. **Magnitude** via the L1 approximation `|I-127| + |Q-127|`.
+2. **Decimate** 2.4 MS/s → 2.0 MS/s by dropping every 6th I/Q pair, so 1 bit
+   lines up with exactly 2 samples (and 0.5 μs with 1 sample).
+3. **Preamble detection**: the 8 μs preamble has high pulses at samples
+   0, 2, 7, 9 and silence elsewhere. We require both the local-shape
+   pattern (`m[0] > m[1] && m[1] < m[2] && ...`) and a 2× strength
+   margin between the dimmest pulse and the brightest silent sample.
+4. **PPM bit slicing**: each bit spans 2 samples; first-sample-high → 1,
+   second-sample-high → 0.
+5. **Frame length**: trim to 56 bits for DF ∈ {0, 4, 5, 11}, otherwise 112.
+
+CRC verification is **not** performed here — the consumer (typically
+`AdsbDecoder` from `:adsb-decoder`) does that and filters out false positives.
+
+### Recall expectations
+
+The demodulator is intentionally simple (no error correction, no fancy
+peak-locking). On a 5-second 2.4 MS/s capture from a typical urban antenna,
+expect roughly **5–15 CRC-valid DF=17 frames** and **2–5 unique aircraft**.
+dump1090 will produce ~3–5× more from the same recording, but adding
+1-bit error correction and signal-quality scoring is out of scope for this
+educational module.
+
+### `RtlTcpMessageSource`
+
+```kotlin
+import com.ayakix.pocketradar.radio.RtlTcpMessageSource
+
+val source = RtlTcpMessageSource()  // localhost:1234 by default
+source.stream().collect { hex ->
+    println(hex)  // pass to AdsbDecoder.ingest()
+}
+```
+
+The class chains `RtlTcpClient` and `IqDemodulator` and exposes the same
+`Flow<String>` interface as the Phase 2 `MockMessageSource`, so the `:app`
+module can switch between the captured fixture and live reception by
+swapping the source instance.
 
 ## Building and testing
 
