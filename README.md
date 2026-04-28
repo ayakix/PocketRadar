@@ -30,7 +30,7 @@ black box.
                                                                   |
                                                                   +-- SDR driver app
                                                                   |   (marto.rtl_tcp_andro)
-                                                                  |   exposes localhost:1234
+                                                                  |   exposes localhost:14423
                                                                   |
                                                                   +-- PocketRadar
                                                                       |  TCP I/Q reader
@@ -43,7 +43,8 @@ black box.
 PocketRadar **does not access the USB device directly**. The Android app
 **"SDR driver"** (originally "RTL2832U Driver" by Martin Marinov) handles USB permission and
 RTL2832U / R828D chip initialization, and exposes raw I/Q samples through an `rtl_tcp` TCP
-server on `localhost:1234`. PocketRadar connects to that server as a TCP client.
+server on `localhost:14423` (the Android driver's default port). PocketRadar
+connects to that server as a TCP client.
 
 This separation keeps PocketRadar focused on signal processing and UI, and reuses a
 well-tested USB driver instead of reimplementing it.
@@ -145,7 +146,8 @@ The detailed task breakdown lives in `plan.md`.
    Connect the antenna to the SMA port.
 2. Open the **SDR driver** app first. Accept the USB permission dialog and tick
    "use by default for this USB device" so subsequent attaches are seamless.
-   The app will start an `rtl_tcp` server on `localhost:1234`.
+   The app will start an `rtl_tcp` server on `localhost:14423` (the
+   driver's default port — PocketRadar matches it out of the box).
 3. Launch **PocketRadar**. The map opens centred on Tokyo Bay; tap **Live
    (rtl_tcp)** in the top control bar to start the foreground service.
 4. The service connects to `rtl_tcp`, applies the ADS-B defaults
@@ -249,7 +251,7 @@ app supports both fixture-replay and live RTL-SDR reception.
   slicing). `:app` adds a foreground service (`FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE`)
   that owns the receive coroutine and feeds the shared `AircraftStore`, plus a
   source-mode toggle on the map (Replay / Live / Stop). Live mode is fed by
-  `RtlTcpMessageSource` against the Android **SDR driver** app on `localhost:1234`.
+  `RtlTcpMessageSource` against the Android **SDR driver** app on `localhost:14423`.
 
 ## License
 
