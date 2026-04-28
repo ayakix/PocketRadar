@@ -29,9 +29,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Foreground service that owns the ADS-B receive coroutine. Either the Phase 2
- * captured-fixture replay (`MockMessageSource`) or the Phase 3 live `rtl_tcp`
- * stream (`RtlTcpMessageSource`) feeds the shared [AircraftStore].
+ * Foreground service that owns the ADS-B receive coroutine. Either the
+ * captured-fixture replay (`MockMessageSource`) or the live `rtl_tcp` stream
+ * (`RtlTcpMessageSource`) feeds the shared [AircraftStore].
  *
  * Lives independently of the Activity so the map keeps updating while the app
  * is in the background or the screen is off — Android requires a foreground

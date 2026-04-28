@@ -40,8 +40,8 @@ object AirborneVelocityDecoder {
         }
 
         val subtype = ((me ushr 48) and 0x7L).toInt()
-        // Subtypes 3..4 (airspeed-with-heading) need a different parser; Phase 1
-        // ignores them rather than throwing so callers can stream a mixed feed.
+        // Subtypes 3..4 (airspeed-with-heading) need a different parser; we
+        // ignore them rather than throwing so callers can stream a mixed feed.
         if (subtype !in 1..2) return null
         val multiplier = if (subtype == 2) 4 else 1
 

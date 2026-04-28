@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    // Phase 1 decoder library and Phase 3 radio library.
+    // Pure-JVM decoder and radio libraries.
     implementation(project(":adsb-decoder"))
     implementation(project(":adsb-radio"))
 

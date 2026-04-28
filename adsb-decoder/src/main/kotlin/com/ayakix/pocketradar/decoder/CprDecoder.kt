@@ -11,7 +11,7 @@ import kotlin.math.max
  * is ambiguous because it only carries the position relative to a "zone", so the
  * decoder needs **either**:
  *   - a recent even/odd frame pair (globally unambiguous), implemented here, or
- *   - a known reference position (locally unambiguous), out of scope for Phase 1.
+ *   - a known reference position (locally unambiguous), out of scope here.
  *
  * Algorithm follows ICAO 9871 / DO-260B and matches the reference implementation in
  * Junzi Sun's *The 1090 Megahertz Riddle*.

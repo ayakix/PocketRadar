@@ -8,9 +8,9 @@ version = "0.1.0-SNAPSHOT"
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
-    // Test-only: use the Phase 1 decoder to verify which demodulated frames are
-    // genuine (CRC passes). The production module stays free of any
-    // :adsb-decoder dependency — see adsb-radio/README.md.
+    // Test-only: use the :adsb-decoder library to verify which demodulated
+    // frames are genuine (CRC passes). The production module stays free of
+    // any :adsb-decoder dependency — see adsb-radio/README.md.
     testImplementation(project(":adsb-decoder"))
 
     testImplementation(kotlin("test"))

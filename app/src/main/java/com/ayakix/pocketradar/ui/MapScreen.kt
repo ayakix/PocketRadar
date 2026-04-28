@@ -60,7 +60,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 /**
  * The receiving station's home position. Used as the initial map camera target.
  * Tokyo Bay (~35.85N 139.93E) matches the location of the captured fixture.
- * Phase 3 may swap this for the device's actual location.
+ * A future iteration may swap this for the device's actual location.
  */
 private val ReceiverHome = LatLng(35.85, 139.93)
 

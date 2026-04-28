@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.flow
 /**
  * Streams pre-recorded Mode S hex messages from `assets/captured_messages.txt`
  * at a roughly real-world rate (~50 ms apart). This lets the rest of the app be
- * exercised without an SDR dongle, and stays in place as the Phase 2 fallback
- * when the real TCP source (Phase 3) is not connected.
+ * exercised without an SDR dongle, and stays in place as the offline
+ * fallback when the live `rtl_tcp` source is not connected.
  */
 class MockMessageSource(
     private val context: Context,

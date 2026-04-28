@@ -7,7 +7,7 @@ altitude, ground speed, track, and vertical rate.
 Zero Android (or other platform) dependencies — the library runs on any JVM and
 is straightforward to compile for Kotlin Multiplatform targets.
 
-## Scope (Phase 1)
+## Scope
 
 **Supported**
 - Mode S CRC-24 verification (generator polynomial `0xFFF409`)
@@ -24,7 +24,7 @@ is straightforward to compile for Kotlin Multiplatform targets.
 - TC 20–22 (airborne position with GNSS altitude)
 - CPR **locally unambiguous** decoding using a known reference position
 - I/Q stream demodulation — the library expects already-demodulated hex strings,
-  e.g. the output of `dump1090 --raw` or the upcoming Phase 3 demodulator
+  e.g. the output of `dump1090 --raw` or the `:adsb-radio` demodulator
 
 ## Usage
 

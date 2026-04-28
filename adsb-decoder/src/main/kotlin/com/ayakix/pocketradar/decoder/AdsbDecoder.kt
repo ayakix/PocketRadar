@@ -5,12 +5,13 @@ package com.ayakix.pocketradar.decoder
  * into [Aircraft] snapshots. Tracks each aircraft by its ICAO address and merges
  * fields as new messages arrive.
  *
- * Phase 1 scope:
+ * Scope:
  *   - in-memory only, single-threaded, no networking
  *   - DF=17 ADS-B messages only (everything else is silently dropped)
  *   - CPR position requires a recent even/odd pair (no reference-position fallback)
  *
- * Phase 2 will wrap this class in a coroutine Flow so the UI can observe updates.
+ * The library exposes plain functions; the UI module wraps the decoder in a
+ * `StateFlow`-backed store so Compose can observe updates reactively.
  */
 class AdsbDecoder(
     /** Maximum age difference (ms) of an even/odd CPR pair to be combinable. */
@@ -46,7 +47,7 @@ class AdsbDecoder(
             in 9..18 -> updatePosition(state, frame, timestampMillis)
             19 -> AirborneVelocityDecoder.decode(frame)?.let { state.velocity = it }
             // Other TCs (5..8 surface, 20..22 GNSS-alt position, 23..31 status)
-            // are intentionally ignored for Phase 1.
+            // are intentionally ignored.
         }
         return state.toAircraft()
     }
