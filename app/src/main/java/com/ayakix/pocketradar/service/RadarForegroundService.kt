@@ -35,8 +35,10 @@ import kotlinx.coroutines.launch
  *
  * Lives independently of the Activity so the map keeps updating while the app
  * is in the background or the screen is off — Android requires a foreground
- * service for that, with `FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE` on
- * Android 14+.
+ * service for that, with `FOREGROUND_SERVICE_TYPE_DATA_SYNC` on Android 14+.
+ * (We talk to the SDR driver app over a localhost TCP socket; the USB device
+ * ownership is in the driver app's process, so `connectedDevice` does not
+ * apply. See the manifest comment for the full reasoning.)
  */
 class RadarForegroundService : Service() {
 
