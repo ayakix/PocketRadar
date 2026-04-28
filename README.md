@@ -248,7 +248,7 @@ app supports both fixture-replay and live RTL-SDR reception.
 - **Phase 3 — `:adsb-radio` + `:app` integration** — pure Kotlin/JVM `:adsb-radio`
   module hosts the rtl_tcp client and the I/Q demodulator (dump1090-style: magnitude,
   6:5 decimation 2.4 → 2.0 MS/s, neighbour-comparison preamble detection, PPM bit
-  slicing). `:app` adds a foreground service (`FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE`)
+  slicing). `:app` adds a foreground service (`FOREGROUND_SERVICE_TYPE_DATA_SYNC`)
   that owns the receive coroutine and feeds the shared `AircraftStore`, plus a
   source-mode toggle on the map (Replay / Live / Stop). Live mode is fed by
   `RtlTcpMessageSource` against the Android **SDR driver** app on `localhost:14423`.

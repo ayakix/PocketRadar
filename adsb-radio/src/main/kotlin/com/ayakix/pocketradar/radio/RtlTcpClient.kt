@@ -17,10 +17,11 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * TCP client for the `rtl_tcp` protocol. Connects to a server (the Android
- * "SDR driver" app on `localhost:1234`, or the upstream `librtlsdr` `rtl_tcp`
- * binary), reads the 12-byte hello header, sends control commands, and exposes
- * the I/Q sample stream as a [Flow].
+ * TCP client for the `rtl_tcp` protocol. Connects to a server — the Android
+ * "SDR driver" app (`marto.rtl_tcp_andro`) on `localhost:14423` by default,
+ * or upstream `librtlsdr`'s `rtl_tcp` binary on `localhost:1234` if you
+ * pass `port = 1234` explicitly — reads the 12-byte hello header, sends
+ * control commands, and exposes the I/Q sample stream as a [Flow].
  *
  * Thread model: [connect], the setter functions, and the underlying socket I/O
  * all run on [Dispatchers.IO]. The class is **not** thread-safe — wrap in a

@@ -49,7 +49,6 @@ dependencies {
     // Compose BOM keeps the Compose artifact versions aligned.
     val composeBom = platform("androidx.compose:compose-bom:2026.04.01")
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
@@ -68,7 +67,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-maps:19.0.0")
     implementation("com.google.maps.android:maps-compose:6.4.4")
 
-    testImplementation("junit:junit:4.13.2")
+    // No JVM unit tests live in :app yet — protocol logic is covered by
+    // :adsb-decoder (33 tests) and :adsb-radio (7 tests). When tests are
+    // added here, prefer JUnit 5 to match the other modules' style.
 }
 
 // secrets-gradle-plugin reads local.properties (gitignored) and injects values into
