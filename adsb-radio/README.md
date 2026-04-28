@@ -1,0 +1,96 @@
+# adsb-radio
+
+The "physical layer" companion to [`adsb-decoder`](../adsb-decoder/README.md).
+
+`adsb-radio` connects to an `rtl_tcp` server, configures the tuner for ADS-B
+reception, streams I/Q samples, demodulates them into Mode S frames, and exposes
+the result as `Flow<String>` (hex). The downstream `adsb-decoder` then turns
+each hex frame into an `Aircraft`.
+
+## Status
+
+| Phase | Component | State |
+|---|---|---|
+| **3A** | `RtlTcpClient` — rtl_tcp protocol client | ✅ implemented |
+| **3B** | `IqDemodulator` — I/Q → Mode S frames (PPM, preamble detection) | planned |
+| **3B** | `RtlTcpMessageSource` — TCP + DSP → `Flow<String>` | planned |
+
+## Phase 3A: `RtlTcpClient`
+
+A pure Kotlin/JVM client for the rtl_tcp wire format used by:
+- `librtlsdr`'s `rtl_tcp` binary (any platform), and
+- the Android **"SDR driver"** app (package `marto.rtl_tcp_andro`).
+
+### Wire protocol
+
+```
+                    rtl_tcp server
+client connects ───────────────►
+                    ◄─── 4 bytes  "RTL0" magic
+                    ◄─── 4 bytes  tuner type   (big-endian uint32)
+                    ◄─── 4 bytes  gain stages  (big-endian uint32)
+                    ◄═══ continuous stream of u8 I, u8 Q samples ═══
+
+client may send 5-byte commands at any time:
+                    ───► 1 byte   command code
+                    ───► 4 bytes  parameter   (big-endian uint32)
+```
+
+### Usage
+
+```kotlin
+import com.ayakix.pocketradar.radio.RtlTcpClient
+
+RtlTcpClient(host = "localhost", port = 1234).use { rtl ->
+    val info = rtl.connect()
+    println("Tuner: ${info.tunerName}, gain stages: ${info.gainStageCount}")
+
+    // Standard ADS-B tuning: 1090 MHz, 2.4 MS/s, manual gain ~49 dB, AGC off.
+    rtl.applyAdsbDefaults()
+
+    rtl.samples().collect { iqChunk ->
+        // iqChunk is interleaved u8 I, u8 Q. Phase 3B will demodulate this.
+        process(iqChunk)
+    }
+}
+```
+
+`RtlTcpClient` is a [`Closeable`](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/io/Closeable.html);
+the `use { ... }` block guarantees the socket is released even on exceptions.
+
+### Command surface
+
+| Method | rtl_tcp code | Notes |
+|---|---|---|
+| `setFrequency(hz)` | `0x01` | ADS-B = `1_090_000_000` |
+| `setSampleRate(hz)` | `0x02` | 2.4 MS/s for ADS-B |
+| `setGainMode(manual)` | `0x03` | `false` = AGC, `true` = manual |
+| `setTunerGain(tenthsOfDb)` | `0x04` | e.g. `490` for 49 dB |
+| `setAgcMode(on)` | `0x08` | RTL2832U's digital AGC |
+| `applyAdsbDefaults()` | (composite) | Recommended starting point for ADS-B |
+
+The full rtl_tcp command list lives in librtlsdr's `rtl_tcp.c`; only the
+ADS-B-relevant ones are exposed here.
+
+## Building and testing
+
+```sh
+./gradlew :adsb-radio:test          # spins up an in-process fake rtl_tcp server
+./gradlew :adsb-radio:build         # compile + test
+```
+
+Pure JVM. JDK 17 via Foojay toolchain resolver. No Android dependency.
+
+The tests use a tiny in-process `ServerSocket` that speaks just enough of the
+rtl_tcp wire format to verify hello-header parsing, command framing, and the
+sample stream's `Flow` semantics.
+
+## Dependencies
+
+- `kotlinx-coroutines-core` (`Flow`, `Dispatchers.IO`)
+- (Phase 3B will add a dependency on `:adsb-decoder` for the `IcaoAddress` /
+  hex types it produces.)
+
+## License
+
+Not yet decided. Will be set to MIT or Apache 2.0 before public release.
