@@ -41,7 +41,9 @@ client may send 5-byte commands at any time:
 ```kotlin
 import com.ayakix.pocketradar.radio.RtlTcpClient
 
-RtlTcpClient(host = "localhost", port = 1234).use { rtl ->
+// Default port is 14423 (the SDR driver app's default). Pass port = 1234
+// explicitly when talking to upstream librtlsdr's rtl_tcp.
+RtlTcpClient(host = "localhost").use { rtl ->
     val info = rtl.connect()
     println("Tuner: ${info.tunerName}, gain stages: ${info.gainStageCount}")
 
@@ -105,7 +107,7 @@ educational module.
 ```kotlin
 import com.ayakix.pocketradar.radio.RtlTcpMessageSource
 
-val source = RtlTcpMessageSource()  // localhost:1234 by default
+val source = RtlTcpMessageSource()  // localhost:14423 by default
 source.stream().collect { hex ->
     println(hex)  // pass to AdsbDecoder.ingest()
 }
