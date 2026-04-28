@@ -70,14 +70,16 @@ Android (USB-C) --[powered OTG adapter]-- RTL-SDR Blog V4 --[RG58 coax]-- 1090 M
 ## Software prerequisites
 
 ### On the Android device
-- Android 14 or later (required for the Foreground Service type used during reception).
-- Google Play services with the Maps API key configured.
-- The **SDR driver** app installed and bound to the dongle:
+- Android 14 or later (`minSdk = 34`).
+- Google Play services with a Maps API key configured (see Build environment below).
+- **For Phase 3 only** — the **SDR driver** app installed and bound to the dongle:
   - Google Play: <https://play.google.com/store/apps/details?id=marto.rtl_tcp_andro>
   - Package name: `marto.rtl_tcp_andro` (formerly known as "RTL2832U Driver")
   - Source: <https://github.com/martinmarinov/rtl_tcp_andro->
   - On first connection, accept the USB permission dialog and choose to open the dongle
     with this app by default.
+  - Phase 2 replays a captured fixture and does not require the SDR driver app or any
+    USB hardware.
 
 ### On macOS (development and Phase 2 fixture capture)
 ```sh
@@ -92,13 +94,16 @@ dump1090 --raw > captured_messages.txt
 ```
 
 ### Build environment
-- Android Studio (latest stable) with Kotlin 2.x.
-- Jetpack Compose, Material 3.
-- Coroutines and Flow (StateFlow / SharedFlow) for concurrency.
-- Koin for dependency injection.
-- Google Maps SDK for Android.
+- Android Studio (latest stable) with Kotlin 2.1.x and AGP 8.13.
+- Gradle 8.14, JDK 17 (downloaded automatically via Foojay toolchain resolver).
+- Jetpack Compose (BOM 2026.04.01), Material 3 with Dynamic Color.
+- Coroutines and Flow (StateFlow) for concurrency.
+- No DI framework — `ViewModelProvider.Factory` injects collaborators directly to keep
+  the educational footprint minimal.
+- Google Maps SDK for Android (`maps-compose`).
 - API key managed via `secrets-gradle-plugin`; put `MAPS_API_KEY=...` in
-  `local.properties` (gitignored).
+  `local.properties` (gitignored). A placeholder `local.defaults.properties` keeps
+  builds green before the key is set.
 
 ## Development phases
 
@@ -181,8 +186,23 @@ The first byte is `(DF << 3) | CA`, so a DF=17 frame always starts with `0x88`�
 
 ## Status
 
-Currently in **planning stage**. Hardware has been verified on macOS. The Android
-implementation has not started yet. This README will grow as TODOs are completed.
+**Phases 1 and 2 are complete.** Phase 3 (live RTL-SDR via TCP) is the next milestone.
+
+- **Phase 1 — `:adsb-decoder`** — pure Kotlin/JVM library decoding Mode S DF=17 messages
+  into structured `Aircraft` records. Covers CRC-24 verification, identification (TC 1–4),
+  airborne position with CPR pair decoding (TC 9–18), and ground-speed velocity (TC 19).
+  33 JUnit tests pass against both the canonical pyModeS sample and a real RTL-SDR
+  capture from Tokyo (15 unique aircraft).
+- **Phase 2 — `:app`** — Android app rendering aircraft on Google Maps. Replays the
+  captured Mode S fixture through the Phase 1 decoder, draws Material flight markers
+  rotated by track angle, per-aircraft polyline trails (max 100 points), and a
+  `ModalBottomSheet` with full aircraft details on tap. Material 3 Dynamic Color follows
+  the device wallpaper on Android 12+ and reacts to dark / light. Stale aircraft fall
+  off the map after 60 seconds.
+
+`MockMessageSource` (Phase 2) implements the same `Flow<String>` interface that the
+Phase 3 TCP source will produce, so wiring the live source is a drop-in replacement
+once the demodulator is ready.
 
 ## License
 
