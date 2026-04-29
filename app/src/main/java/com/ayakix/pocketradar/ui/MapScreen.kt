@@ -84,6 +84,7 @@ fun MapScreen(viewModel: RadarViewModel) {
     }
 
     var selected by remember { mutableStateOf<IcaoAddress?>(null) }
+    var debugOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val tint = MaterialTheme.colorScheme.primary.toArgb()
@@ -155,6 +156,7 @@ fun MapScreen(viewModel: RadarViewModel) {
             onReplay = viewModel::startReplay,
             onLive = viewModel::startLive,
             onStop = viewModel::stop,
+            onDebug = { debugOpen = true },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 // statusBarsPadding() pushes the bar below the status bar; without
@@ -162,6 +164,17 @@ fun MapScreen(viewModel: RadarViewModel) {
                 // layouts (the default with Material 3 + ComponentActivity).
                 .statusBarsPadding()
                 .padding(16.dp),
+        )
+    }
+
+    if (debugOpen) {
+        val entries by viewModel.logEntries.collectAsState()
+        val stats by viewModel.logStats.collectAsState()
+        DebugBottomSheet(
+            entries = entries,
+            stats = stats,
+            onDismiss = { debugOpen = false },
+            onReset = viewModel::resetLog,
         )
     }
 
@@ -183,6 +196,7 @@ private fun SourceControlBar(
     onReplay: () -> Unit,
     onLive: () -> Unit,
     onStop: () -> Unit,
+    onDebug: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -215,6 +229,11 @@ private fun SourceControlBar(
                     onClick = onStop,
                     label = { Text("Stop") },
                     enabled = state.running,
+                    colors = AssistChipDefaults.assistChipColors(),
+                )
+                AssistChip(
+                    onClick = onDebug,
+                    label = { Text("Debug") },
                     colors = AssistChipDefaults.assistChipColors(),
                 )
             }
