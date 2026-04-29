@@ -10,6 +10,9 @@ import com.ayakix.pocketradar.decoder.Aircraft
 import com.ayakix.pocketradar.decoder.IcaoAddress
 import com.ayakix.pocketradar.domain.AircraftStore
 import com.ayakix.pocketradar.domain.LatLng
+import com.ayakix.pocketradar.domain.MessageLog
+import com.ayakix.pocketradar.domain.MessageLogEntry
+import com.ayakix.pocketradar.domain.MessageStats
 import com.ayakix.pocketradar.service.RadarForegroundService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,9 +25,14 @@ class RadarViewModel(
 
     private val app = application as PocketRadarApp
     private val store: AircraftStore = app.aircraftStore
+    private val messageLog: MessageLog = app.messageLog
 
     val aircraft: StateFlow<Map<IcaoAddress, Aircraft>> = store.aircraft
     val trails: StateFlow<Map<IcaoAddress, List<LatLng>>> = store.trails
+
+    /** Bounded log of recent Mode S frames, for the debug sheet. */
+    val logEntries: StateFlow<List<MessageLogEntry>> = messageLog.entries
+    val logStats: StateFlow<MessageStats> = messageLog.stats
 
     /** Current foreground service state (which source is running, or none). */
     val sourceState: StateFlow<SourceState> = RadarForegroundService.sourceState
@@ -56,6 +64,10 @@ class RadarViewModel(
 
     fun stop() {
         RadarForegroundService.stop(app)
+    }
+
+    fun resetLog() {
+        viewModelScope.launch { messageLog.reset() }
     }
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {

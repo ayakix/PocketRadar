@@ -24,6 +24,12 @@ import kotlinx.coroutines.sync.withLock
 class AircraftStore(
     private val decoder: AdsbDecoder = AdsbDecoder(),
     private val maxTrailPoints: Int = 100,
+    /**
+     * Optional debug log. When present, every hex frame the store sees is
+     * also recorded for the debug UI — including frames the decoder
+     * rejects (wrong DF, CRC mismatch, etc.).
+     */
+    private val messageLog: MessageLog? = null,
 ) {
 
     private val _aircraft = MutableStateFlow<Map<IcaoAddress, Aircraft>>(emptyMap())
@@ -36,6 +42,10 @@ class AircraftStore(
 
     /** Push one Mode S hex message into the decoder. */
     suspend fun ingest(hex: String, timestampMillis: Long) {
+        // Always record for the debug log first — the user wants to see
+        // even the frames the decoder rejects.
+        messageLog?.record(hex, timestampMillis)
+
         val updated = decoder.ingest(hex, timestampMillis) ?: return
 
         mutex.withLock {
