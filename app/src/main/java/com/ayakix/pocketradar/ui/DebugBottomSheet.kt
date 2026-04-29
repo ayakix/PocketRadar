@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -18,7 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -50,6 +54,15 @@ fun DebugBottomSheet(
     onReset: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Default to "valid only" so the noise the demodulator emits doesn't drown
+    // out the real traffic. Toggle OFF to see every candidate (useful for
+    // diagnosing why valid frames are missing).
+    var validOnly by remember { mutableStateOf(true) }
+    val visibleEntries = remember(entries, validOnly) {
+        if (validOnly) entries.filter { it.inspection.isValidCrc } else entries
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
@@ -60,6 +73,12 @@ fun DebugBottomSheet(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Debug log", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.weight(1f))
+                FilterChip(
+                    selected = validOnly,
+                    onClick = { validOnly = !validOnly },
+                    label = { Text("CRC ✓ only") },
+                )
+                Spacer(Modifier.width(8.dp))
                 TextButton(onClick = onReset) { Text("Reset") }
             }
 
@@ -69,17 +88,22 @@ fun DebugBottomSheet(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            if (entries.isEmpty()) {
-                Text(
+            when {
+                entries.isEmpty() -> Text(
                     text = "No frames received yet — start a source from the control bar.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(entries, key = { "${it.timestampMillis}-${it.inspection.hex}" }) { entry ->
-                        LogEntryRow(entry)
-                    }
+                visibleEntries.isEmpty() -> Text(
+                    text = "No CRC-valid frames in the buffer yet. Toggle the filter off to inspect the raw stream.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(
+                        visibleEntries,
+                        key = { "${it.timestampMillis}-${it.inspection.hex}" },
+                    ) { entry -> LogEntryRow(entry) }
                 }
             }
         }
