@@ -2,7 +2,7 @@
 """干渉源から見た俯角を計算し、送信アンテナの垂直パターンの影響を切り分ける。
 
 使い方:
-    python3 tools/beam_geometry.py docs/field-tests/2026-09-01/*.json
+    python3 tools/beam_geometry.py private/docs/field-tests/2026-09-01/*.json
 
 なぜ必要か:
     ch25 の受信レベルを「送信所からの距離」だけで説明しようとすると破綻する。

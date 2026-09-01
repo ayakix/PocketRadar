@@ -2,7 +2,7 @@
 """デバッグエクスポートの帯域スキャン結果を1枚のスペクトラム図にする。
 
 使い方:
-    python3 tools/spectrum_chart.py docs/field-tests/2026-09-01/*.json -o spectrum.html
+    python3 tools/spectrum_chart.py private/docs/field-tests/2026-09-01/*.json -o spectrum.html
 
 出力は単体で開ける HTML（外部依存なし）。入力ごとに1系列を描き、
 横軸=周波数（昇順の9帯域）、縦軸=空きチャンネル基準の相対レベル [dB] を取る。
