@@ -35,6 +35,10 @@ SERIES_COLORS = [
 
 # 描画領域（ユーザー座標）。CSS ではなく viewBox 内の単位。
 PLOT_W, PLOT_H = 1000, 420
+
+# これを超えたら「棒の値は頭打ち」とみなす。0.1 % でも 8 bit ADC では
+# 波形が崩れ始めるので、注意喚起としては十分に低く取る。
+CLIP_THRESHOLD = 0.001
 MARGIN = {"top": 52, "right": 20, "bottom": 56, "left": 56}
 
 
@@ -59,6 +63,7 @@ def load_measurement(path: pathlib.Path) -> dict:
             "mean": b["mean_dbfs"] - reference,
             "peak": b["peak_dbfs"] - reference,
             "harmonic_hz": b.get("harmonic_of_interest_hz"),
+            "clip_rate": b.get("clip_rate", 0.0),
         }
         for b in bands
     ]
@@ -81,6 +86,7 @@ def derive_name(path: pathlib.Path, data: dict) -> str:
     sites = {
         "haneda-t1": "羽田 T1",
         "tokyotower-maindeck": "東京タワー 150m",
+        "skytree-base": "スカイツリー直下",
     }
     details = {
         "diag-skytree-side": "スカイツリー側",
@@ -172,16 +178,30 @@ def build_svg(measurements: list[dict]) -> str:
             x = first_x + series_index * (bar_w + 2)
             top = y(max(point["mean"], 0))
             height = abs(y(point["mean"]) - y(0))
+            clipped = point["clip_rate"] > CLIP_THRESHOLD
             title = (
                 f'{measurement["name"]} — {point["label"]}\n'
                 f'{point["hz"] / 1e6:.3f} MHz\n'
                 f'平均 {point["mean"]:+.1f} dB / ピーク {point["peak"]:+.1f} dB'
+                + (f'\nADC クリップ {point["clip_rate"] * 100:.1f}% — 実際はこれ以上に強い'
+                   if clipped else "")
             )
             parts.append(f'<g class="series s{series_index}"><title>{html.escape(title)}</title>')
             parts.append(
                 f'<rect class="bar" x="{x:.1f}" y="{top:.1f}" width="{bar_w:.1f}" '
                 f'height="{max(height, 1.5):.1f}" rx="3"/>'
             )
+            if clipped:
+                # 飽和した棒は測定値が頭打ちで、真の強度はこれより上にある。
+                # 斜線を重ねて「この値は下限でしかない」ことを形でも示す。
+                parts.append(
+                    f'<rect class="clip-hatch" x="{x:.1f}" y="{top:.1f}" '
+                    f'width="{bar_w:.1f}" height="{max(height, 1.5):.1f}" rx="3"/>'
+                )
+                parts.append(
+                    f'<text class="clip-mark" x="{x + bar_w / 2:.1f}" y="{top - 5:.1f}" '
+                    f'text-anchor="middle">▲</text>'
+                )
             # ピークは平均の上に開いた横棒で置く。平均との差が大きいほど
             # パルス性が強い（DME の発見はこの差分から出た）。
             peak_y = y(point["peak"])
@@ -213,6 +233,9 @@ def build_svg(measurements: list[dict]) -> str:
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L8,4 L0,8 z"/>
     </marker>
+    <pattern id="clip" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="6" stroke-width="2.5"/>
+    </pattern>
   </defs>
 {body}
 </svg>"""
@@ -345,6 +368,9 @@ svg rect.highlight {{ fill: var(--band); }}
 svg path.harmonic {{ fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }}
 svg marker path {{ fill: var(--text-muted); }}
 .series rect.bar {{ fill: var(--c); }}
+svg pattern#clip line {{ stroke: var(--surface); opacity: .55; }}
+.series rect.clip-hatch {{ fill: url(#clip); }}
+.series text.clip-mark {{ fill: var(--c); font-size: 9px; }}
 .series line.peak {{ stroke: var(--c); stroke-width: 2; }}
 .series line.peak-link {{ stroke: var(--c); stroke-width: 1; stroke-dasharray: 2 2; opacity: .5; }}
 .series:hover rect.bar {{ opacity: .78; }}
@@ -367,7 +393,8 @@ tbody th {{ text-align: left; font-weight: 500; }}
   <h1>1090 MHz 周辺の帯域スキャン比較</h1>
   <p class="lede">縦軸は空きチャンネル (1080 / 1100 MHz) を 0 dB とした相対レベル。
   棒が平均レベル、その上の横線がピーク。<strong>棒と横線の差が大きいほどパルス性の信号</strong>で、
-  1080 MHz の突出は空港 DME による。横軸は周波数の昇順。棒にカーソルを合わせると数値が出る。</p>
+  1080 MHz の突出は空港 DME による。斜線と ▲ の付いた棒は <strong>ADC が振り切れており、
+  実際の強度はその値より上</strong>。横軸は周波数の昇順。棒にカーソルを合わせると数値が出る。</p>
 
   <div class="card">
     <div class="legend">{legend}</div>

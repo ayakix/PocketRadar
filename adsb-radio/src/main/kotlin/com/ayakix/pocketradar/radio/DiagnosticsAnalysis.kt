@@ -18,6 +18,7 @@ fun analyze(bands: List<BandResult>, gains: List<GainResult>): List<Finding> {
     val findings = mutableListOf<Finding>()
 
     findings += analyzeInputLevel(bands)
+    findings += analyzeBandClipping(bands)
     findings += analyzePulseInterference(bands)
     findings += analyzeMinimumGainLevel(gains)
     findings += analyzeGainCurve(gains)
@@ -87,6 +88,40 @@ private fun analyzeInputLevel(bands: List<BandResult>): List<Finding> {
     }
 
     return findings
+}
+
+/**
+ * 帯域スキャン側の ADC クリップを見る。
+ *
+ * ゲインスイープは 1090 MHz でしか測らないので、帯域外の送信所で入力段が
+ * 潰れていてもクリップ率はゼロのまま出てこない。スカイツリー直下の実測
+ * (ch25 でクリップ率 25.6 %、1090 MHz では 0 %) がこの穴を露わにした。
+ * 飽和は目的周波数の外で起きても、そこで生じた歪みが 1090 MHz に落ちてくる。
+ */
+private fun analyzeBandClipping(bands: List<BandResult>): List<Finding> {
+    val worst = bands.maxByOrNull { it.metrics.clipRate } ?: return emptyList()
+    if (worst.metrics.clipRate <= ClipRateWarning) return emptyList()
+
+    val severity =
+        if (worst.metrics.clipRate > ClipRateCritical) Severity.CRITICAL else Severity.WARNING
+    val clipped = bands.filter { it.metrics.clipRate > ClipRateWarning }
+    val others = clipped.filter { it !== worst }
+    val alsoText = if (others.isEmpty()) "" else
+        "同様に " + others.joinToString("、") { it.target.label } + " も飽和しています。"
+
+    return listOf(
+        Finding(
+            severity,
+            "帯域外の信号で ADC が振り切れている: ${worst.target.label}",
+            "${"%.3f".format(worst.target.frequencyHz / 1e6)} MHz を受信中、全サンプルの " +
+                "${"%.1f".format(worst.metrics.clipRate * 100)} % が 8 bit ADC の上下限に" +
+                "貼り付いています。${alsoText}" +
+                "1090 MHz に同調している間はクリップが出なくても、入力段はこれらの信号を" +
+                "同時に浴びており、そこで生じた歪みが 1090 MHz に落ちてきます。" +
+                "利得を下げても目的信号が一緒に小さくなるだけで解決しません。" +
+                "アンテナ直後 (LNA より前) の 1090 MHz SAW バンドパスフィルタが唯一の対策です。",
+        )
+    )
 }
 
 /**

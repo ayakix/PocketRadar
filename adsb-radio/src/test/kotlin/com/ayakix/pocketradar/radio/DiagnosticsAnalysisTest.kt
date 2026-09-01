@@ -40,9 +40,10 @@ class DiagnosticsAnalysisTest {
         role: BandRole = BandRole.SURVEY,
         harmonicHz: Int? = null,
         peakDbfs: Double = dbfs,
+        clipRate: Double = 0.0,
     ) = BandResult(
         target = BandTarget(label, 500_000_000, role = role, harmonicOfInterestHz = harmonicHz),
-        metrics = metricsAt(dbfs, peakDbfs = peakDbfs),
+        metrics = metricsAt(dbfs, clipRate = clipRate, peakDbfs = peakDbfs),
     )
 
     private fun gain(
@@ -159,6 +160,41 @@ class DiagnosticsAnalysisTest {
         val findings = analyze(emptyList(), gains)
 
         assertEquals(Severity.CRITICAL, findings.titled("最小利得でも入力が過大")?.severity)
+    }
+
+    // ---- 帯域外の飽和 ---------------------------------------------------------
+
+    @Test
+    fun `clipping on a survey band is reported even when 1090 is clean`() {
+        // スカイツリー直下の再現: ch25 でクリップ率 25.6 %、1090 MHz は 0 %。
+        // ゲインスイープ側だけを見ていると見逃す組み合わせ。
+        val bands = listOf(
+            band("対照 1080", -48.6, BandRole.QUIET_REFERENCE),
+            band("UHF ch25 日本テレビ", -5.5, peakDbfs = 0.0, clipRate = 0.256),
+            band("UHF ch21 フジテレビ", -8.1, peakDbfs = 0.0, clipRate = 0.052),
+        )
+        val gains = listOf(
+            gain(0, validFrames = 0, preambles = 7268, dbfs = -49.1),
+            gain(496, validFrames = 0, preambles = 8330, dbfs = -32.0),
+        )
+
+        val finding = analyze(bands, gains).titled("帯域外の信号で ADC が振り切れている")
+
+        assertEquals(Severity.CRITICAL, finding?.severity)
+        assertTrue(finding!!.title.contains("ch25"), finding.title)
+        assertTrue(finding.detail.contains("フジテレビ"), "should name the other clipped bands")
+        assertTrue(finding.detail.contains("SAW"), "should name the concrete fix")
+    }
+
+    @Test
+    fun `no clipping on any band stays silent`() {
+        val bands = listOf(
+            band("対照 1080", -48.0, BandRole.QUIET_REFERENCE),
+            band("UHF ch25", -29.0),
+        )
+        val findings = analyze(bands, listOf(gain(402, validFrames = 20)))
+
+        assertTrue(findings.titled("帯域外の信号で ADC") == null, "unexpected: $findings")
     }
 
     // ---- パルス性干渉 (DME) ---------------------------------------------------
