@@ -1,0 +1,28 @@
+<!-- ランチャーアイコン前景：レーダーの同心円＋機体シルエット。
+     機体パスは flight_48px.xml と同一で、セーフゾーン（中央66dp）に
+     収まるよう group で 0.5 倍に縮小している。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:pathData="M480,195 a285,285 0 1,0 0.2,0 z"
+      android:strokeColor="#1E6B78"
+      android:strokeWidth="10"
+      android:fillColor="#00000000"/>
+  <path
+      android:pathData="M480,285 a195,195 0 1,0 0.2,0 z"
+      android:strokeColor="#2A93A6"
+      android:strokeWidth="10"
+      android:fillColor="#00000000"/>
+  <group
+      android:scaleX="0.5"
+      android:scaleY="0.5"
+      android:pivotX="480"
+      android:pivotY="480">
+    <path
+        android:fillColor="#35C9DC"
+        android:pathData="M285,880L285,797L409,711L409,539L80,672L80,570L409,339L409,151Q409,122 430,101Q451,80 480,80Q509,80 530,101Q551,122 551,151L551,339L880,570L880,672L551,539L551,711L674,797L674,880L480,821L285,880Z"/>
+  </group>
+</vector>

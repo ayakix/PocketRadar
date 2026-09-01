@@ -1,13 +1,16 @@
 package com.ayakix.pocketradar.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.ayakix.pocketradar.domain.MessageLogEntry
@@ -88,22 +92,31 @@ fun DebugBottomSheet(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            when {
-                entries.isEmpty() -> Text(
-                    text = "No frames received yet — start a source from the control bar.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                visibleEntries.isEmpty() -> Text(
-                    text = "No CRC-valid frames in the buffer yet. Toggle the filter off to inspect the raw stream.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(
-                        visibleEntries,
-                        key = { "${it.timestampMillis}-${it.inspection.hex}" },
-                    ) { entry -> LogEntryRow(entry) }
+            // ログはターミナルを模した一段暗いパネルに載せ、地の文と視覚的に分離する。
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(12.dp),
+            ) {
+                when {
+                    entries.isEmpty() -> Text(
+                        text = "No frames received yet — start a source from the control bar.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    visibleEntries.isEmpty() -> Text(
+                        text = "No CRC-valid frames in the buffer yet. Toggle the filter off to inspect the raw stream.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(
+                            visibleEntries,
+                            key = { "${it.timestampMillis}-${it.inspection.hex}" },
+                        ) { entry -> LogEntryRow(entry) }
+                    }
                 }
             }
         }
@@ -114,20 +127,43 @@ fun DebugBottomSheet(
 private fun StatsBar(stats: MessageStats) {
     val crcRate = if (stats.totalReceived == 0) 0
     else (stats.crcValid * 100 / stats.totalReceived)
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = "Total ${stats.totalReceived}   CRC ✓ ${stats.crcValid} ($crcRate%)   ICAOs ${stats.uniqueIcaos}",
-            style = MaterialTheme.typography.bodyMedium,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            StatItem("Total", "${stats.totalReceived}")
+            StatItem("CRC ✓", "${stats.crcValid} ($crcRate%)", MaterialTheme.colorScheme.primary)
+            StatItem("ICAOs", "${stats.uniqueIcaos}", MaterialTheme.colorScheme.secondary)
+        }
         if (stats.byDownlinkFormat.isNotEmpty()) {
             Text(
                 text = "DF " + stats.byDownlinkFormat
                     .toSortedMap()
                     .entries.joinToString("  ") { "${it.key}:${it.value}" },
                 style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun StatItem(
+    label: String,
+    value: String,
+    valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Column {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            fontFamily = FontFamily.Monospace,
+            color = valueColor,
+        )
     }
 }
 

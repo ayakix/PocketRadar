@@ -10,6 +10,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,13 +26,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -42,9 +59,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ayakix.pocketradar.R
@@ -56,7 +76,9 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
@@ -107,15 +129,19 @@ fun MapScreen(viewModel: RadarViewModel) {
     var debugOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val tint = MaterialTheme.colorScheme.primary.toArgb()
+    val trailColor = MaterialTheme.colorScheme.primary
+    val tint = trailColor.toArgb()
+    // 縁取りは surface 色（ライト＝ほぼ白、ダーク＝紺）。ベタ塗りだけだと
+    // 機体同士が重なったとき一つの塊に見えるため、輪郭で分離して見せる。
+    val outline = MaterialTheme.colorScheme.surface.toArgb()
     var mapLoaded by remember { mutableStateOf(false) }
     var flightBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var flightIcon by remember { mutableStateOf<BitmapDescriptor?>(null) }
 
-    LaunchedEffect(mapLoaded, tint) {
+    LaunchedEffect(mapLoaded, tint, outline) {
         if (mapLoaded) {
             flightBitmap?.recycle()
-            val bitmap = createTintedBitmap(context, R.drawable.flight_48px, tint)
+            val bitmap = createTintedBitmap(context, R.drawable.flight_48px, tint, outline)
             flightBitmap = bitmap
             flightIcon = BitmapDescriptorFactory.fromBitmap(bitmap)
         }
@@ -124,10 +150,23 @@ fun MapScreen(viewModel: RadarViewModel) {
         onDispose { flightBitmap?.recycle() }
     }
 
+    // ダークテーマ時はレーダー画面らしい夜間スタイルの地図に切り替える。
+    val darkTheme = isSystemInDarkTheme()
+    val mapProperties = remember(darkTheme) {
+        MapProperties(
+            mapStyleOptions = if (darkTheme) {
+                MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark)
+            } else {
+                null
+            },
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
+            properties = mapProperties,
             onMapLoaded = { mapLoaded = true },
         ) {
             val icon = flightIcon
@@ -163,7 +202,7 @@ fun MapScreen(viewModel: RadarViewModel) {
                 if (points.size >= 2) {
                     Polyline(
                         points = points.map { it.toGoogleLatLng() },
-                        color = Color(0xFF00B0FF),
+                        color = trailColor.copy(alpha = 0.7f),
                         width = 6f,
                     )
                 }
@@ -228,10 +267,11 @@ private fun SourceControlBar(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         tonalElevation = 4.dp,
+        shadowElevation = 6.dp,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -245,32 +285,92 @@ private fun SourceControlBar(
                     // restart the running source for no reason.
                     onClick = { if (!replaySelected) onReplay() },
                     label = { Text("Replay") },
+                    leadingIcon = { ChipIcon(Icons.Filled.PlayArrow) },
                 )
                 FilterChip(
                     selected = liveSelected,
                     onClick = { if (!liveSelected) onLive() },
-                    label = { Text("Live (rtl_tcp)") },
+                    label = { Text("Live") },
+                    leadingIcon = { ChipIcon(Icons.Filled.Sensors) },
                 )
-                AssistChip(
+                Spacer(Modifier.weight(1f))
+                // Stop / Debug はラベル付きチップだと4つ並べたとき画面幅に収まらず
+                // 折り返すため、アイコンのみのボタンにして幅を確保している。
+                FilledTonalIconButton(
                     onClick = onStop,
-                    label = { Text("Stop") },
                     enabled = state.running,
-                    colors = AssistChipDefaults.assistChipColors(),
-                )
-                AssistChip(
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Stop,
+                        contentDescription = "Stop",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                FilledTonalIconButton(
                     onClick = onDebug,
-                    label = { Text("Debug") },
-                    colors = AssistChipDefaults.assistChipColors(),
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Terminal,
+                        contentDescription = "Debug",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 6.dp, start = 4.dp),
+            ) {
+                StatusDot(running = state.running, live = state.mode == SourceMode.LIVE)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (state.running) "${state.mode.label} — $aircraftCount aircraft tracked"
+                    else "Idle — pick a source to start",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = if (state.running) "${state.mode.label}: $aircraftCount aircraft tracked"
-                else "Idle — pick a source to start",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp),
-            )
         }
     }
+}
+
+@Composable
+private fun ChipIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+}
+
+/**
+ * 受信状態インジケーター。Live 受信中はレーダーの掃引を思わせるパルス
+ * アニメーションで「電波を拾っている」ことを直感的に示す。
+ */
+@Composable
+private fun StatusDot(running: Boolean, live: Boolean) {
+    val color = when {
+        running && live -> MaterialTheme.colorScheme.secondary
+        running -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.outline
+    }
+    val alpha = if (running) {
+        val transition = rememberInfiniteTransition(label = "statusDot")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.25f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 900),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "statusDotAlpha",
+        ).value
+    } else {
+        1f
+    }
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .alpha(alpha)
+            .background(color, CircleShape),
+    )
 }
 
 private val SourceMode.label: String
@@ -285,36 +385,79 @@ private fun AircraftDetailSheet(ac: Aircraft) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = ac.callsign ?: "Unknown",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text(
-            text = "ICAO ${ac.icao}",
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painter = painterResource(R.drawable.flight_48px),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .size(32.dp)
+                    .rotate(ac.trackDegrees?.toFloat() ?: 0f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = ac.callsign ?: "Unknown",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Text(
+                    text = "ICAO ${ac.icao}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         HorizontalDivider()
 
-        DetailRow("Altitude",      ac.altitudeFeet?.let { "$it ft" })
-        DetailRow("Ground speed",  ac.groundSpeedKnots?.let { "$it kt" })
-        DetailRow("Track",         ac.trackDegrees?.let { "%.1f°".format(it) })
-        DetailRow("Vertical rate", ac.verticalRateFpm?.let { "$it fpm" })
-        DetailRow("Position",      formatPosition(ac.latitude, ac.longitude))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatCard("Altitude", ac.altitudeFeet?.let { "$it" }, "ft", Modifier.weight(1f))
+            StatCard("Speed", ac.groundSpeedKnots?.let { "$it" }, "kt", Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatCard("Track", ac.trackDegrees?.let { "%.1f".format(it) }, "°", Modifier.weight(1f))
+            StatCard("V/S", ac.verticalRateFpm?.let { "$it" }, "fpm", Modifier.weight(1f))
+        }
+        StatCard("Position", formatPosition(ac.latitude, ac.longitude), "", Modifier.fillMaxWidth())
 
         Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String?) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+private fun StatCard(label: String, value: String?, unit: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Text(value ?: "—", style = MaterialTheme.typography.bodyMedium)
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value ?: "—",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = FontFamily.Monospace,
+                )
+                if (value != null && unit.isNotEmpty()) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = unit,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -325,20 +468,43 @@ private fun formatPosition(lat: Double?, lon: Double?): String? {
 
 private fun DomainLatLng.toGoogleLatLng(): LatLng = LatLng(latitude, longitude)
 
+private const val MarkerScale = 0.7f
+
 private fun createTintedBitmap(
     context: Context,
     @DrawableRes resId: Int,
     @ColorInt tint: Int,
+    @ColorInt outline: Int,
 ): Bitmap {
     val drawable = ContextCompat.getDrawable(context, resId)
         ?: error("Drawable resource $resId not found")
-    drawable.setTint(tint)
 
-    val width = drawable.intrinsicWidth.coerceAtLeast(1)
-    val height = drawable.intrinsicHeight.coerceAtLeast(1)
+    // 素材の 48dp をそのまま描くと地図上で大きすぎるため縮小して描画する
+    val width = (drawable.intrinsicWidth * MarkerScale).toInt().coerceAtLeast(1)
+    val height = (drawable.intrinsicHeight * MarkerScale).toInt().coerceAtLeast(1)
+    // 縁取り幅はアイコンサイズ比で決め、拡大縮小しても見た目が揃うようにする
+    val stroke = (width * 0.04f).coerceAtLeast(1.5f)
+    val pad = kotlin.math.ceil(stroke).toInt()
+
+    // 縁取り色のシルエットを 8 方向にずらして重ねることで輪郭線を作る。
+    // ベクターを単純に拡大すると凹形状で縁の太さが不均一になるための措置。
+    drawable.setTint(outline)
     drawable.setBounds(0, 0, width, height)
+    val silhouette = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    drawable.draw(Canvas(silhouette))
 
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    drawable.draw(Canvas(bitmap))
+    val bitmap = Bitmap.createBitmap(width + pad * 2, height + pad * 2, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    for (i in 0 until 8) {
+        val angle = Math.PI / 4 * i
+        val dx = pad + (kotlin.math.cos(angle) * stroke).toFloat()
+        val dy = pad + (kotlin.math.sin(angle) * stroke).toFloat()
+        canvas.drawBitmap(silhouette, dx, dy, null)
+    }
+    silhouette.recycle()
+
+    drawable.setTint(tint)
+    drawable.setBounds(pad, pad, pad + width, pad + height)
+    drawable.draw(canvas)
     return bitmap
 }
