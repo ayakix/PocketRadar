@@ -2,6 +2,7 @@ package com.ayakix.pocketradar.ui
 
 import android.content.Context
 import com.ayakix.pocketradar.data.MockMessageSource
+import com.ayakix.pocketradar.driver.SdrDriver
 import com.ayakix.pocketradar.radio.RtlTcpMessageSource
 import kotlinx.coroutines.flow.Flow
 
@@ -26,7 +27,7 @@ fun SourceMode.toMessageSource(context: Context): MessageSource = when (this) {
         MessageSource { mock.stream() }
     }
     SourceMode.LIVE -> {
-        val rtl = RtlTcpMessageSource()
+        val rtl = RtlTcpMessageSource(host = SdrDriver.HOST)
         MessageSource { rtl.stream() }
     }
 }

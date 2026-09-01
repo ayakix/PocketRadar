@@ -62,6 +62,14 @@ class RadarViewModel(
         RadarForegroundService.start(app, SourceMode.LIVE)
     }
 
+    /**
+     * Surface a driver-launch failure through the same channel the service
+     * uses, so the UI has a single place to show reception problems.
+     */
+    fun reportError(message: String) {
+        app.postError(message)
+    }
+
     fun stop() {
         RadarForegroundService.stop(app)
     }

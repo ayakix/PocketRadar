@@ -146,9 +146,33 @@ ADS-B は幸い「パルスが有るか無いか」だけの変調（→ [5 章]
 PocketRadar は **USB デバイスを直接触りません**。
 Android での USB パーミッション処理や RTL2832U / R828D の初期化は、実績のある
 **SDR driver アプリ**（`marto.rtl_tcp_andro`、旧称 RTL2832U Driver）に任せ、
-そのアプリが立てる `rtl_tcp` サーバー（`localhost:14423`）に TCP クライアントとして接続します。
+そのアプリが立てる `rtl_tcp` サーバー（`127.0.0.1:14423`）に TCP クライアントとして接続します。
 
 この分離により、PocketRadar 本体は**信号処理と UI という教材の本題に集中**できます。
+
+ここで重要なのは、**SDR driver は常駐サーバーではない**という点です。
+ランチャー画面に START ボタンが無いのは意図的で、他アプリから
+`iqsrc://` スキームの VIEW Intent で依頼されたときだけ `rtl_tcp` を起動します。
+
+```kotlin
+// 引数文字列は rtl_tcp バイナリのコマンドライン引数と同じ書式
+Intent(Intent.ACTION_VIEW, Uri.parse("iqsrc://-a 127.0.0.1 -p 14423 -s 2400000"))
+```
+
+この Intent を投げることには、サーバー起動以外にもう一つ役割があります。
+**USB パーミッションのダイアログを出せるのはこの経路だけ**、という点です。
+Android の USB 権限は**パッケージ名ではなく uid に紐づく**ため、
+ドライバを再インストールすると権限は黙って失効します。
+その状態では `rtl_tcp` が listen を開始せず、PocketRadar 側からは
+「接続拒否」としか見えません。Intent を投げ直すことだけが復旧手段です。
+
+接続先を `localhost` ではなく `127.0.0.1` と数値で書いているのも理由があります。
+`localhost` は `::1`（IPv6）に解決され得る一方、ドライバは IPv4 にしか bind しないため、
+名前解決の順序次第で無関係な接続拒否を踏むからです。
+
+なお、Intent から復帰した直後はまだ listen が始まっていません（実測で約 1.6 秒のラグ）。
+そのため `RtlTcpMessageSource` は**初回接続だけリトライ**します。
+ヘッダーを読めた後は再試行しません — そこから先の失敗は本物なので握り潰さないためです。
 
 | モジュール | 役割 | 依存 |
 |---|---|---|
@@ -167,7 +191,9 @@ Android での USB パーミッション処理や RTL2832U / R828D の初期化�
 sequenceDiagram
     participant P as PocketRadar<br>(RtlTcpClient)
     participant S as SDR driver<br>(rtl_tcp サーバー)
-    P->>S: TCP 接続 (localhost:14423)
+    P->>S: iqsrc:// Intent（起動依頼 + USB 権限要求）
+    S-->>P: RESULT_OK（失敗時は detailed_exception_message）
+    P->>S: TCP 接続 (127.0.0.1:14423)
     S-->>P: ヘッダー 12 バイト<br>"RTL0" + チューナー種別 + ゲイン段数
     P->>S: 0x02 サンプルレート = 2,400,000 Hz
     P->>S: 0x01 中心周波数 = 1,090,000,000 Hz

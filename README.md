@@ -43,8 +43,15 @@ black box.
 PocketRadar **does not access the USB device directly**. The Android app
 **"SDR driver"** (originally "RTL2832U Driver" by Martin Marinov) handles USB permission and
 RTL2832U / R828D chip initialization, and exposes raw I/Q samples through an `rtl_tcp` TCP
-server on `localhost:14423` (the Android driver's default port). PocketRadar
+server on `127.0.0.1:14423` (the Android driver's default port). PocketRadar
 connects to that server as a TCP client.
+
+The driver is **not** a resident server — its launcher screen deliberately has
+no start button. PocketRadar asks it to open the dongle with an
+`iqsrc://-a 127.0.0.1 -p 14423 -s 2400000` VIEW intent, and only starts
+collecting once the driver reports success. That round trip is also what makes
+Android show the USB permission dialog, so it is the only way to (re)grant
+access to the dongle.
 
 This separation keeps PocketRadar focused on signal processing and UI, and reuses a
 well-tested USB driver instead of reimplementing it.
@@ -77,8 +84,11 @@ Android (USB-C) --[powered OTG adapter]-- RTL-SDR Blog V4 --[RG58 coax]-- 1090 M
   - Google Play: <https://play.google.com/store/apps/details?id=marto.rtl_tcp_andro>
   - Package name: `marto.rtl_tcp_andro` (formerly known as "RTL2832U Driver")
   - Source: <https://github.com/martinmarinov/rtl_tcp_andro->
-  - On first connection, accept the USB permission dialog and choose to open the dongle
-    with this app by default.
+  - No manual setup is needed: tapping **Live (rtl_tcp)** in PocketRadar
+    launches it. Accept the USB permission dialog when it appears.
+  - Android grants that permission per **uid**, not per package name, so
+    reinstalling the driver silently revokes it. Live mode then fails with a
+    plain connection refused until the dialog is accepted again.
   - The captured-fixture replay does not require the SDR driver app or any
     USB hardware — skip this if you only want the offline demo.
 
@@ -139,19 +149,20 @@ canvas with the markers floating on top.
 
 1. Plug the RTL-SDR Blog V4 into the Android device through a powered OTG cable.
    Connect the antenna to the SMA port.
-2. Open the **SDR driver** app first. Accept the USB permission dialog and tick
-   "use by default for this USB device" so subsequent attaches are seamless.
-   The app will start an `rtl_tcp` server on `localhost:14423` (the
-   driver's default port — PocketRadar matches it out of the box).
-3. Launch **PocketRadar**. The map opens centred on Tokyo Bay; tap **Live
-   (rtl_tcp)** in the top control bar to start the foreground service.
+2. Launch **PocketRadar**. The map opens centred on Tokyo Bay; tap **Live
+   (rtl_tcp)** in the top control bar.
+3. PocketRadar hands off to the **SDR driver** app, which asks for USB
+   permission (first run, or after the driver is reinstalled) and starts its
+   `rtl_tcp` server. The screen returns to PocketRadar, which then starts the
+   foreground service. Do not open the driver app yourself — it has no start
+   button outside its advanced debug mode.
 4. The service connects to `rtl_tcp`, applies the ADS-B defaults
    (1090 MHz, 2.4 MS/s, manual gain), demodulates I/Q in real time, and feeds
    the same `AircraftStore` the Replay mode uses. Aircraft appear on the map
    as their CRC-valid frames stream in.
-5. If `rtl_tcp` is not reachable (SDR driver app not running, dongle not
-   connected, etc.), an error toast appears and the service stops. Pick
-   **Replay** to fall back to the captured fixture demo.
+5. If the driver cannot open the dongle (permission denied, nothing plugged
+   in, etc.) its own diagnostic is surfaced as an error toast and the service
+   never starts. Pick **Replay** to fall back to the captured fixture demo.
 
 The notification shown while the service runs is the proof Android wants
 that the receiver is honest about staying alive in the background — tapping

@@ -1,9 +1,13 @@
 package com.ayakix.pocketradar.ui
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ayakix.pocketradar.R
 import com.ayakix.pocketradar.decoder.Aircraft
+import com.ayakix.pocketradar.driver.SdrDriver
 import com.ayakix.pocketradar.decoder.IcaoAddress
 import com.ayakix.pocketradar.domain.LatLng as DomainLatLng
 import com.google.android.gms.maps.model.BitmapDescriptor
@@ -68,6 +73,21 @@ private val ReceiverHome = LatLng(35.85, 139.93)
 @Composable
 fun MapScreen(viewModel: RadarViewModel) {
     val context = LocalContext.current
+
+    // Live mode has to go through the SDR driver app: it starts its rtl_tcp
+    // listener only when asked via this intent, and the round trip is also
+    // what triggers Android's USB permission dialog. We only start collecting
+    // once the driver reports success, so a denied dongle shows the driver's
+    // own diagnostic instead of a bare socket error.
+    val sdrDriverLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.startLive()
+        } else {
+            viewModel.reportError(SdrDriver.failureMessage(result.data))
+        }
+    }
     val aircraft by viewModel.aircraft.collectAsState()
     val trails by viewModel.trails.collectAsState()
     val sourceState by viewModel.sourceState.collectAsState()
@@ -154,7 +174,13 @@ fun MapScreen(viewModel: RadarViewModel) {
             state = sourceState,
             aircraftCount = aircraft.size,
             onReplay = viewModel::startReplay,
-            onLive = viewModel::startLive,
+            onLive = {
+                try {
+                    sdrDriverLauncher.launch(SdrDriver.openIntent())
+                } catch (e: ActivityNotFoundException) {
+                    viewModel.reportError(SdrDriver.NOT_INSTALLED_MESSAGE)
+                }
+            },
             onStop = viewModel::stop,
             onDebug = { debugOpen = true },
             modifier = Modifier
