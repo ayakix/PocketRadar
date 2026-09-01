@@ -150,5 +150,7 @@ object DebugReport {
             }
     }
 
-    private const val FORMAT_VERSION = 1
+    // v2: stats.by_downlink_format and stats.unique_icaos now count
+    // CRC-valid frames only.
+    private const val FORMAT_VERSION = 2
 }

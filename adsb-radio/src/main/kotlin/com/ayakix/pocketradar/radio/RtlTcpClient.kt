@@ -89,12 +89,14 @@ class RtlTcpClient(
     }
 
     /** Apply the standard ADS-B tuning (1090 MHz, 2.4 MS/s, manual gain). */
-    suspend fun applyAdsbDefaults() {
+    suspend fun applyAdsbDefaults(
+        tunerGainTenthsDb: Int = RtlTcpProtocol.ADSB_TUNER_GAIN_TENTHS_DB,
+    ) {
         setSampleRate(RtlTcpProtocol.ADSB_SAMPLE_RATE_HZ)
         setFrequency(RtlTcpProtocol.ADSB_FREQUENCY_HZ)
         setAgcMode(false)
         setGainMode(manual = true)
-        setTunerGain(RtlTcpProtocol.ADSB_TUNER_GAIN_TENTHS_DB)
+        setTunerGain(tunerGainTenthsDb)
     }
 
     suspend fun setFrequency(hz: Int) =

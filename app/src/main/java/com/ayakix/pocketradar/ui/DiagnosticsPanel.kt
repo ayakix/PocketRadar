@@ -133,6 +133,16 @@ private fun ReportView(report: DiagnosticsReport, onRerun: () -> Unit, onExport:
             }
         }
 
+        report.bestGain?.let { best ->
+            item {
+                Text(
+                    text = "最良利得 ${"%.1f".format(best.gainDb)} dB を次回の Live 受信に適用します",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
         item { SectionTitle("判定") }
         items(report.findings) { finding -> FindingCard(finding) }
 

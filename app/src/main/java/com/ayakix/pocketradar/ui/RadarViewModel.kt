@@ -159,7 +159,14 @@ class RadarViewModel(
                             progress.completed,
                             progress.total,
                         )
-                        is DiagnosticsProgress.Done -> DiagnosticsState.Complete(progress.report)
+                        is DiagnosticsProgress.Done -> {
+                            // スイープの最良利得を次回以降の Live に引き継ぐ。
+                            // 全段ゼロなら根拠がないので既定値のまま触らない。
+                            progress.report.bestGain?.let {
+                                app.settings.liveTunerGainTenthsDb = it.gainTenthsDb
+                            }
+                            DiagnosticsState.Complete(progress.report)
+                        }
                     }
                 }
         }

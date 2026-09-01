@@ -34,6 +34,12 @@ class RtlTcpMessageSource(
     private val port: Int = RtlTcpProtocol.DEFAULT_PORT,
     private val demodulator: IqDemodulator = IqDemodulator(),
     /**
+     * Tuner gain for this session. Callers pass the site-specific best gain
+     * found by the RF diagnostics sweep; the maximum-gain default only
+     * applies when no sweep has ever run.
+     */
+    private val tunerGainTenthsDb: Int = RtlTcpProtocol.ADSB_TUNER_GAIN_TENTHS_DB,
+    /**
      * How long to keep retrying the initial connect. The Android SDR driver
      * app returns from its open-device Activity roughly a second before its
      * listening socket is actually up, so a single attempt loses that race and
@@ -47,7 +53,7 @@ class RtlTcpMessageSource(
     fun stream(): Flow<String> = flow {
         RtlTcpClient(host, port).use { rtl ->
             connectWithRetry(rtl)
-            rtl.applyAdsbDefaults()
+            rtl.applyAdsbDefaults(tunerGainTenthsDb)
 
             // I/Q chunks arrive in ~16 KB bursts. We keep a rolling tail of
             // the previous chunk so frames that straddle a chunk boundary

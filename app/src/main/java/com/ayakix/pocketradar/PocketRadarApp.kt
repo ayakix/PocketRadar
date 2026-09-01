@@ -5,6 +5,7 @@ import com.ayakix.pocketradar.domain.AircraftStore
 import com.ayakix.pocketradar.domain.CoverageTracker
 import com.ayakix.pocketradar.domain.MessageLog
 import com.ayakix.pocketradar.domain.ReceiverPositionProvider
+import com.ayakix.pocketradar.domain.ReceiverSettings
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -30,6 +31,7 @@ class PocketRadarApp : Application() {
     val aircraftStore: AircraftStore by lazy { AircraftStore(messageLog = messageLog) }
     val coverageTracker: CoverageTracker by lazy { CoverageTracker() }
     val receiverPosition: ReceiverPositionProvider by lazy { ReceiverPositionProvider(this) }
+    val settings: ReceiverSettings by lazy { ReceiverSettings(this) }
 
     private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val errors: SharedFlow<String> = _errors.asSharedFlow()

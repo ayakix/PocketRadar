@@ -22,6 +22,13 @@ data class MessageLogEntry(
  * Aggregate counters maintained alongside the log so the UI can show a
  * one-line summary (total received, CRC pass rate, unique aircraft, DF
  * distribution) without re-walking the entry list on every recomposition.
+ *
+ * [uniqueIcaos] and [byDownlinkFormat] count **CRC-valid frames only**. The
+ * demodulator emits far more noise than signal (a Haneda field run logged
+ * 100k frames of which 1.6% passed CRC), and noise carries random bits where
+ * the ICAO and DF live — counting it produced absurdities like 10,150
+ * "unique aircraft" in eight minutes. [totalReceived] still counts
+ * everything, because the noise volume itself is diagnostic information.
  */
 data class MessageStats(
     val totalReceived: Int = 0,
@@ -64,11 +71,15 @@ class MessageLog(
             val entry = MessageLogEntry(timestampMillis, inspection)
             _entries.update { (listOf(entry) + it).take(maxEntries) }
 
-            inspection.icao?.toString()?.let { seenIcaos.add(it) }
+            if (inspection.isValidCrc) {
+                inspection.icao?.toString()?.let { seenIcaos.add(it) }
+            }
             _stats.update { current ->
                 val nextDf = current.byDownlinkFormat.toMutableMap()
-                nextDf[inspection.downlinkFormat] =
-                    (nextDf[inspection.downlinkFormat] ?: 0) + 1
+                if (inspection.isValidCrc) {
+                    nextDf[inspection.downlinkFormat] =
+                        (nextDf[inspection.downlinkFormat] ?: 0) + 1
+                }
                 current.copy(
                     totalReceived = current.totalReceived + 1,
                     crcValid = current.crcValid + if (inspection.isValidCrc) 1 else 0,
