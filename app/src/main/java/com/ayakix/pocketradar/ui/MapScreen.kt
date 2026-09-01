@@ -1,5 +1,6 @@
 package com.ayakix.pocketradar.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -72,6 +73,8 @@ import com.ayakix.pocketradar.decoder.Aircraft
 import com.ayakix.pocketradar.driver.SdrDriver
 import com.ayakix.pocketradar.decoder.IcaoAddress
 import com.ayakix.pocketradar.domain.LatLng as DomainLatLng
+import com.ayakix.pocketradar.domain.greatCircleDistanceKm
+import com.ayakix.pocketradar.domain.initialBearingDegrees
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -83,13 +86,6 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
-
-/**
- * The receiving station's home position. Used as the initial map camera target.
- * Tokyo Bay (~35.85N 139.93E) matches the location of the captured fixture.
- * A future iteration may swap this for the device's actual location.
- */
-private val ReceiverHome = LatLng(35.85, 139.93)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,9 +106,25 @@ fun MapScreen(viewModel: RadarViewModel) {
             viewModel.reportError(SdrDriver.failureMessage(result.data))
         }
     }
+    // 受信局位置は距離・カバレッジ計算の原点になるので、起動時に一度だけ取得する。
+    // 拒否されてもフィクスチャ位置にフォールバックするため機能は止まらない。
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { viewModel.refreshReceiverPosition() }
+    LaunchedEffect(Unit) {
+        viewModel.refreshReceiverPosition()
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
+    }
+
     val aircraft by viewModel.aircraft.collectAsState()
     val trails by viewModel.trails.collectAsState()
     val sourceState by viewModel.sourceState.collectAsState()
+    val receiver by viewModel.receiverPosition.collectAsState()
 
     // Surface backend errors (e.g. rtl_tcp connection failure) as a toast.
     LaunchedEffect(Unit) {
@@ -122,7 +134,10 @@ fun MapScreen(viewModel: RadarViewModel) {
     }
 
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(ReceiverHome, 9f)
+        position = CameraPosition.fromLatLngZoom(
+            LatLng(receiver.position.latitude, receiver.position.longitude),
+            9f,
+        )
     }
 
     var selected by remember { mutableStateOf<IcaoAddress?>(null) }
@@ -235,11 +250,21 @@ fun MapScreen(viewModel: RadarViewModel) {
     if (debugOpen) {
         val entries by viewModel.logEntries.collectAsState()
         val stats by viewModel.logStats.collectAsState()
+        val coverageSectors by viewModel.coverageSectors.collectAsState()
+        val farthest by viewModel.farthestContact.collectAsState()
+        val diagnostics by viewModel.diagnostics.collectAsState()
         DebugBottomSheet(
             entries = entries,
             stats = stats,
+            coverageSectors = coverageSectors,
+            farthest = farthest,
+            receiver = receiver,
+            diagnostics = diagnostics,
             onDismiss = { debugOpen = false },
             onReset = viewModel::resetLog,
+            onResetCoverage = viewModel::resetCoverage,
+            onStartDiagnostics = viewModel::startDiagnostics,
+            onCancelDiagnostics = viewModel::cancelDiagnostics,
         )
     }
 
@@ -249,7 +274,7 @@ fun MapScreen(viewModel: RadarViewModel) {
             onDismissRequest = { selected = null },
             sheetState = sheetState,
         ) {
-            AircraftDetailSheet(selectedAircraft)
+            AircraftDetailSheet(selectedAircraft, receiver.position)
         }
     }
 }
@@ -380,7 +405,7 @@ private val SourceMode.label: String
     }
 
 @Composable
-private fun AircraftDetailSheet(ac: Aircraft) {
+private fun AircraftDetailSheet(ac: Aircraft, receiver: DomainLatLng) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -420,6 +445,28 @@ private fun AircraftDetailSheet(ac: Aircraft) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatCard("Track", ac.trackDegrees?.let { "%.1f".format(it) }, "°", Modifier.weight(1f))
             StatCard("V/S", ac.verticalRateFpm?.let { "$it" }, "fpm", Modifier.weight(1f))
+        }
+        // 受信局からの距離は、その機体が「どこまで届いた実績か」を示す値。
+        // カバレッジの記録と同じ大圏距離で計算している。
+        val lat = ac.latitude
+        val lon = ac.longitude
+        val distanceKm = if (lat != null && lon != null) {
+            greatCircleDistanceKm(receiver, DomainLatLng(lat, lon))
+        } else {
+            null
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatCard("Range", distanceKm?.let { "%.1f".format(it) }, "km", Modifier.weight(1f))
+            StatCard(
+                "Bearing",
+                if (lat != null && lon != null) {
+                    "%.0f".format(initialBearingDegrees(receiver, DomainLatLng(lat, lon)))
+                } else {
+                    null
+                },
+                "°",
+                Modifier.weight(1f),
+            )
         }
         StatCard("Position", formatPosition(ac.latitude, ac.longitude), "", Modifier.fillMaxWidth())
 

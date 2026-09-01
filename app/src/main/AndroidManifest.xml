@@ -10,6 +10,10 @@
          hold. dataSync needs only the matching FGS permission. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 受信局位置。距離・カバレッジ計算の原点に使う。拒否されても
+         フィクスチャ位置にフォールバックするので必須ではない。 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:name=".PocketRadarApp"

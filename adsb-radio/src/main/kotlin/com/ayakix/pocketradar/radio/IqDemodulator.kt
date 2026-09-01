@@ -45,14 +45,23 @@ class IqDemodulator(
      * 2 MS/s) where the preamble starts — useful for callers that splice
      * overlapping buffers and want to deduplicate.
      */
-    fun demodulate(iq: ByteArray): List<DetectedFrame> {
+    fun demodulate(iq: ByteArray): List<DetectedFrame> = demodulateDetailed(iq).frames
+
+    /**
+     * Same work as [demodulate], but also reports how often the preamble
+     * detector fired. The ratio between preamble hits and frames that survive
+     * a CRC check downstream is what separates "nothing is arriving" from
+     * "the detector is being triggered by noise" — the two failure modes look
+     * identical if you only count valid frames.
+     */
+    fun demodulateDetailed(iq: ByteArray): DemodulationResult {
         // TCP reads from rtl_tcp can split an I/Q sample pair across two
         // chunks, so an odd-length buffer is normal in production. The
         // magnitude routines floor to (size / 2) samples, silently dropping
         // a trailing single byte; the caller (RtlTcpMessageSource) keeps
         // that byte in its carry-over tail and re-combines it on the next
         // chunk so the I/Q pair gets restored.
-        if (iq.size < 2) return emptyList()
+        if (iq.size < 2) return DemodulationResult.Empty
         val mag = if (sampleRateHz == 2_400_000) decimateAndMagnitude24To20(iq)
         else magnitudeAt20(iq)
         return demodulateAt2Mhz(mag)
@@ -104,12 +113,14 @@ class IqDemodulator(
 
     // ---- Demodulation at 2 MS/s -------------------------------------------------
 
-    private fun demodulateAt2Mhz(mag: IntArray): List<DetectedFrame> {
+    private fun demodulateAt2Mhz(mag: IntArray): DemodulationResult {
         val results = mutableListOf<DetectedFrame>()
+        var preambleMatches = 0
         val maxStart = mag.size - PREAMBLE_SAMPLES - LONG_PAYLOAD_SAMPLES
         var i = 0
         while (i < maxStart) {
             if (matchesPreamble(mag, i)) {
+                preambleMatches++
                 val payloadStart = i + PREAMBLE_SAMPLES
                 val frame = decodeFrame(mag, payloadStart)
                 if (frame == null) {
@@ -125,7 +136,11 @@ class IqDemodulator(
                 i++
             }
         }
-        return results
+        return DemodulationResult(
+            frames = results,
+            preambleMatches = preambleMatches,
+            samplesProcessed = mag.size,
+        )
     }
 
     /**

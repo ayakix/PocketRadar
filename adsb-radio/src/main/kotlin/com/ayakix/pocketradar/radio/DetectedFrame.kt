@@ -13,3 +13,23 @@ data class DetectedFrame(
     val sampleOffset: Int,
     val hex: String,
 )
+
+/**
+ * Result of one demodulation pass, including the detector statistics that
+ * [IqDemodulator.demodulateDetailed] collects along the way.
+ *
+ * @property preambleMatches How many positions passed the preamble test.
+ *   Always >= `frames.size`, since some matches fail to yield a frame.
+ * @property samplesProcessed Length of the post-decimation magnitude buffer,
+ *   i.e. the number of 2 MS/s samples the counters cover. Lets callers turn
+ *   raw counts into rates per second.
+ */
+data class DemodulationResult(
+    val frames: List<DetectedFrame>,
+    val preambleMatches: Int,
+    val samplesProcessed: Int,
+) {
+    companion object {
+        val Empty = DemodulationResult(emptyList(), 0, 0)
+    }
+}
