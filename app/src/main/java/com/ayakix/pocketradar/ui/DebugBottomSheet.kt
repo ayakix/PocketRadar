@@ -80,6 +80,7 @@ fun DebugBottomSheet(
     onResetCoverage: () -> Unit,
     onStartDiagnostics: () -> Unit,
     onCancelDiagnostics: () -> Unit,
+    onExport: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var tab by remember { mutableStateOf(DebugTab.FRAMES) }
@@ -104,7 +105,7 @@ fun DebugBottomSheet(
             Spacer(Modifier.height(12.dp))
 
             when (tab) {
-                DebugTab.FRAMES -> FramesTab(entries, stats, onReset)
+                DebugTab.FRAMES -> FramesTab(entries, stats, onReset, onExport)
                 DebugTab.COVERAGE -> CoverageTab(
                     sectors = coverageSectors,
                     farthest = farthest,
@@ -115,6 +116,7 @@ fun DebugBottomSheet(
                     state = diagnostics,
                     onStart = onStartDiagnostics,
                     onCancel = onCancelDiagnostics,
+                    onExport = onExport,
                 )
             }
         }
@@ -126,6 +128,7 @@ private fun FramesTab(
     entries: List<MessageLogEntry>,
     stats: MessageStats,
     onReset: () -> Unit,
+    onExport: () -> Unit,
 ) {
     // Default to "valid only" so the noise the demodulator emits doesn't drown
     // out the real traffic. Toggle OFF to see every candidate (useful for
@@ -146,6 +149,7 @@ private fun FramesTab(
             )
             Spacer(Modifier.width(8.dp))
             TextButton(onClick = onReset) { Text("Reset") }
+            TextButton(onClick = onExport) { Text("Export") }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

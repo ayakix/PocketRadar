@@ -265,6 +265,7 @@ fun MapScreen(viewModel: RadarViewModel) {
             onResetCoverage = viewModel::resetCoverage,
             onStartDiagnostics = viewModel::startDiagnostics,
             onCancelDiagnostics = viewModel::cancelDiagnostics,
+            onExport = { DebugReportSharer.share(context, viewModel.buildDebugReport()) },
         )
     }
 

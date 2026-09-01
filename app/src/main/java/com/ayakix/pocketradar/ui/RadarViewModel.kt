@@ -10,8 +10,10 @@ import com.ayakix.pocketradar.decoder.Aircraft
 import com.ayakix.pocketradar.decoder.IcaoAddress
 import com.ayakix.pocketradar.decoder.inspectModeS
 import com.ayakix.pocketradar.domain.AircraftStore
+import com.ayakix.pocketradar.BuildConfig
 import com.ayakix.pocketradar.domain.CoverageRecord
 import com.ayakix.pocketradar.domain.CoverageTracker
+import com.ayakix.pocketradar.domain.DebugReport
 import com.ayakix.pocketradar.domain.LatLng
 import com.ayakix.pocketradar.domain.MessageLog
 import com.ayakix.pocketradar.domain.MessageLogEntry
@@ -139,6 +141,21 @@ class RadarViewModel(
         diagnosticsJob = null
         _diagnostics.value = DiagnosticsState.Idle
     }
+
+    /**
+     * Snapshot everything the debug sheet shows into a shareable JSON string.
+     * Pulls from the same StateFlows the UI renders, so what you export is
+     * exactly what you were looking at.
+     */
+    fun buildDebugReport(): String = DebugReport.build(
+        appVersion = BuildConfig.VERSION_NAME,
+        receiver = receiverPosition.value,
+        stats = logStats.value,
+        entries = logEntries.value,
+        coverageSectors = coverage.sectors.value,
+        farthest = coverage.farthest.value,
+        diagnostics = (diagnostics.value as? DiagnosticsState.Complete)?.report,
+    )
 
     /**
      * CRC gate for the diagnostics counters. `:adsb-radio` deliberately keeps

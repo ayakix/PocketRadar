@@ -47,6 +47,7 @@ fun DiagnosticsPanel(
     state: DiagnosticsState,
     onStart: () -> Unit,
     onCancel: () -> Unit,
+    onExport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -54,7 +55,7 @@ fun DiagnosticsPanel(
             is DiagnosticsState.Idle -> IdleIntro(onStart)
             is DiagnosticsState.Running -> RunningProgress(state, onCancel)
             is DiagnosticsState.Failed -> FailureNotice(state, onStart)
-            is DiagnosticsState.Complete -> ReportView(state.report, onStart)
+            is DiagnosticsState.Complete -> ReportView(state.report, onStart, onExport)
         }
     }
 }
@@ -115,7 +116,7 @@ private fun FailureNotice(state: DiagnosticsState.Failed, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun ReportView(report: DiagnosticsReport, onRerun: () -> Unit) {
+private fun ReportView(report: DiagnosticsReport, onRerun: () -> Unit, onExport: () -> Unit) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -126,6 +127,8 @@ private fun ReportView(report: DiagnosticsReport, onRerun: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
+                OutlinedButton(onClick = onExport) { Text("Export") }
+                Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = onRerun) { Text("再実行") }
             }
         }

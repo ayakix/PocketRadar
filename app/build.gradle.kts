@@ -38,6 +38,8 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_NAME をデバッグレポートに埋めるため。
+        buildConfig = true
     }
 }
 
