@@ -100,25 +100,16 @@ def derive_name(path: pathlib.Path, data: dict) -> str:
     リネーム規約 `日付-時刻_地点_内容.json` に沿っている前提で、
     地点と時刻を拾う。合わない名前ならファイル名をそのまま使う。
     """
-    sites = {
-        "haneda-t1": "羽田 T1",
-        "tokyotower-maindeck": "東京タワー 150m",
-        "skytree-base": "スカイツリー直下",
-        "site-b": "1.05km地点",
-        "site-d": "地点D",
-    }
-    details = {
-        "diag-skytree-side": "スカイツリー側",
-        "diag-fm-side": "FM 側",
-        "diag-short-window": "短窓",
-    }
+    # 地点名はファイル名の第 2 要素から機械的に導出する。表示名の対訳表を
+    # ここに持たないのは、計測地点（= 個人の行動履歴）をコードに埋め込まない
+    # ため。読みやすい系列名にしたければファイル名側を工夫する。
     stem = path.stem
     parts = stem.split("_")
     if len(parts) >= 2 and "-" in parts[0]:
         time_part = parts[0].split("-")[-1]
         clock = f"{time_part[:2]}:{time_part[2:]}" if len(time_part) == 4 else time_part
-        site = sites.get(parts[1], parts[1].replace("-", " "))
-        detail = details.get("-".join(parts[2:]), "")
+        site = parts[1].replace("-", " ")
+        detail = " ".join(parts[2:]).replace("-", " ")
         return f"{site} {clock}" + (f" · {detail}" if detail else "")
     return stem
 
