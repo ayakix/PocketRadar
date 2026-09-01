@@ -101,6 +101,7 @@ def derive_name(path: pathlib.Path, data: dict) -> str:
         "tokyotower-maindeck": "東京タワー 150m",
         "skytree-base": "スカイツリー直下",
         "site-b": "1.05km地点",
+        "site-d": "地点D",
     }
     details = {
         "diag-skytree-side": "スカイツリー側",
