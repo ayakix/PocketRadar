@@ -26,11 +26,15 @@ import pathlib
 import sys
 
 # dataviz スキルの検証済みカテゴリカル配色（明/暗の対応する段）。
-# 3スロットまでは全ペアで CVD・通常視ともに閾値を満たすことを検証済み。
+# 帯域スキャンはグループ棒グラフ＝隣接ペア判定が適用でき、この 4 スロットは
+# 明暗とも隣接ペアの CVD・通常視の閾値を満たすことを検証済み
+# （最悪 CVD ΔE 9.1 明 / 8.4 暗、通常視 22.9 / 19.8）。
+# 5 つ目を足すと黄と橙が同時に出て全ペア判定を割るため、ここが上限。
 SERIES_COLORS = [
     ("#2a78d6", "#3987e5"),  # blue
     ("#eb6834", "#d95926"),  # orange
     ("#1baf7a", "#199e70"),  # aqua
+    ("#eda100", "#c98500"),  # yellow
 ]
 
 # 描画領域（ユーザー座標）。CSS ではなく viewBox 内の単位。
@@ -482,6 +486,7 @@ h1 {{ font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }}
 .legend-item.s0 {{ --c: var(--series-0); }}
 .legend-item.s1 {{ --c: var(--series-1); }}
 .legend-item.s2 {{ --c: var(--series-2); }}
+.legend-item.s3 {{ --c: var(--series-3); }}
 .scroller {{ overflow-x: auto; }}
 svg {{ display: block; width: 100%; min-width: 720px; height: auto; overflow: visible; }}
 svg line.hgrid {{ stroke: var(--grid); stroke-width: 1; }}
@@ -505,6 +510,7 @@ svg pattern#clip line {{ stroke: var(--surface); opacity: .55; }}
 .series.s0 {{ --c: var(--series-0); }}
 .series.s1 {{ --c: var(--series-1); }}
 .series.s2 {{ --c: var(--series-2); }}
+.series.s3 {{ --c: var(--series-3); }}
 .axis-title {{ font-size: .8rem; color: var(--text-muted); margin-top: 8px; }}
 h2 {{ font-size: 1.05rem; margin: 0 0 6px; }}
 svg text.tick.x {{ text-anchor: middle; fill: var(--text-muted); font-size: 11px; }}
