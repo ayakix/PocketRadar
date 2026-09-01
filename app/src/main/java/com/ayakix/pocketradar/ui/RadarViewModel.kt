@@ -104,6 +104,22 @@ class RadarViewModel(
     }
 
     /**
+     * UI is about to bounce through the SDR driver's `iqsrc://` intent before
+     * [startDiagnostics]. Stop any running source now (the dongle serves one
+     * client at a time) and show progress so the button press has feedback
+     * during the driver round-trip.
+     */
+    fun onDiagnosticsDriverLaunch() {
+        stop()
+        _diagnostics.value = DiagnosticsState.Running("SDR ドライバを起動中", 0, 1)
+    }
+
+    /** The driver round-trip failed; surface it in the diagnostics panel. */
+    fun onDiagnosticsDriverFailed(message: String) {
+        _diagnostics.value = DiagnosticsState.Failed(message)
+    }
+
+    /**
      * Run the RF self-test. The dongle serves one client at a time, so any
      * running source is stopped first — otherwise the diagnostics connect
      * races the foreground service for the same socket.

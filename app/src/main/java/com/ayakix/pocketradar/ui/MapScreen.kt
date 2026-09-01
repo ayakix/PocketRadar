@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Stop
@@ -45,6 +46,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +58,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +78,8 @@ import com.ayakix.pocketradar.decoder.IcaoAddress
 import com.ayakix.pocketradar.domain.LatLng as DomainLatLng
 import com.ayakix.pocketradar.domain.greatCircleDistanceKm
 import com.ayakix.pocketradar.domain.initialBearingDegrees
+import kotlinx.coroutines.launch
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
@@ -82,6 +87,7 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
@@ -108,9 +114,13 @@ fun MapScreen(viewModel: RadarViewModel) {
     }
     // 受信局位置は距離・カバレッジ計算の原点になるので、起動時に一度だけ取得する。
     // 拒否されてもフィクスチャ位置にフォールバックするため機能は止まらない。
+    var locationGranted by remember { mutableStateOf(hasLocationPermission(context)) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { viewModel.refreshReceiverPosition() }
+    ) {
+        locationGranted = hasLocationPermission(context)
+        viewModel.refreshReceiverPosition()
+    }
     LaunchedEffect(Unit) {
         viewModel.refreshReceiverPosition()
         locationPermissionLauncher.launch(
@@ -119,6 +129,19 @@ fun MapScreen(viewModel: RadarViewModel) {
                 Manifest.permission.ACCESS_COARSE_LOCATION,
             )
         )
+    }
+
+    // RF 診断も Live と同じくドライバの iqsrc:// インテントを経由する。
+    // ドライバはクライアント切断で rtl_tcp を終了するため、直前まで Live
+    // だった場合ソケットはもう存在せず、インテントで再起動させる必要がある。
+    val diagnosticsDriverLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.startDiagnostics()
+        } else {
+            viewModel.onDiagnosticsDriverFailed(SdrDriver.failureMessage(result.data))
+        }
     }
 
     val aircraft by viewModel.aircraft.collectAsState()
@@ -167,21 +190,35 @@ fun MapScreen(viewModel: RadarViewModel) {
 
     // ダークテーマ時はレーダー画面らしい夜間スタイルの地図に切り替える。
     val darkTheme = isSystemInDarkTheme()
-    val mapProperties = remember(darkTheme) {
+    val mapProperties = remember(darkTheme, locationGranted) {
         MapProperties(
             mapStyleOptions = if (darkTheme) {
                 MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark)
             } else {
                 null
             },
+            // 現在位置の青ドット。権限が下りるまで有効化すると SecurityException
+            // になるため、許可状態と連動させる。
+            isMyLocationEnabled = locationGranted,
         )
     }
+    val mapUiSettings = remember {
+        MapUiSettings(
+            // 回転を許すと機体マーカーの向き（真北基準の Track 角）と地図の
+            // 向きがずれて読み違えるため、常に北固定にする。
+            rotationGesturesEnabled = false,
+            // 再センタリングは独自のリセットボタンで行うので標準ボタンは隠す。
+            myLocationButtonEnabled = false,
+        )
+    }
+    val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize()) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = mapProperties,
+            uiSettings = mapUiSettings,
             onMapLoaded = { mapLoaded = true },
         ) {
             val icon = flightIcon
@@ -245,6 +282,27 @@ fun MapScreen(viewModel: RadarViewModel) {
                 .statusBarsPadding()
                 .padding(16.dp),
         )
+
+        // 現在位置へ戻すリセットボタン。位置を取り直してからカメラを寄せる。
+        SmallFloatingActionButton(
+            onClick = {
+                viewModel.refreshReceiverPosition()
+                val home = viewModel.receiverPosition.value.position
+                scope.launch {
+                    cameraPositionState.animate(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(home.latitude, home.longitude),
+                            9f,
+                        ),
+                    )
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp),
+        ) {
+            Icon(Icons.Filled.MyLocation, contentDescription = "現在位置に戻る")
+        }
     }
 
     if (debugOpen) {
@@ -263,7 +321,14 @@ fun MapScreen(viewModel: RadarViewModel) {
             onDismiss = { debugOpen = false },
             onReset = viewModel::resetLog,
             onResetCoverage = viewModel::resetCoverage,
-            onStartDiagnostics = viewModel::startDiagnostics,
+            onStartDiagnostics = {
+                viewModel.onDiagnosticsDriverLaunch()
+                try {
+                    diagnosticsDriverLauncher.launch(SdrDriver.openIntent())
+                } catch (e: ActivityNotFoundException) {
+                    viewModel.onDiagnosticsDriverFailed(SdrDriver.NOT_INSTALLED_MESSAGE)
+                }
+            },
             onCancelDiagnostics = viewModel::cancelDiagnostics,
             onExport = { DebugReportSharer.share(context, viewModel.buildDebugReport()) },
         )
@@ -515,6 +580,12 @@ private fun formatPosition(lat: Double?, lon: Double?): String? {
 }
 
 private fun DomainLatLng.toGoogleLatLng(): LatLng = LatLng(latitude, longitude)
+
+private fun hasLocationPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
 
 private const val MarkerScale = 0.7f
 

@@ -1,10 +1,12 @@
 package com.ayakix.pocketradar.radio
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
 
 /** What a [BandTarget] is measured for. */
 enum class BandRole {
@@ -122,6 +124,16 @@ class RfDiagnostics(
     private val isCrcValid: (String) -> Boolean,
     private val bandTargets: List<BandTarget> = DefaultBandTargets,
     private val gainSteps: List<Int> = DefaultGainSteps,
+    /**
+     * How long to keep retrying the initial connect. Two races make the
+     * first attempts fail even on a healthy setup: the SDR driver returns
+     * from its open-device Activity before its socket is listening, and a
+     * just-stopped live session may still hold the single connection
+     * rtl_tcp serves — the extra client is accepted but never sent the
+     * header, which surfaces as a read timeout rather than a refusal.
+     */
+    private val connectTimeoutMillis: Long = 10_000,
+    private val connectRetryDelayMillis: Long = 250,
 ) {
 
     fun run(): Flow<DiagnosticsProgress> = flow {
@@ -129,7 +141,7 @@ class RfDiagnostics(
         var completed = 0
 
         RtlTcpClient(host, port).use { rtl ->
-            val info = rtl.connect()
+            val info = connectWithRetry(rtl)
             rtl.setSampleRate(RtlTcpProtocol.ADSB_SAMPLE_RATE_HZ)
             rtl.setAgcMode(false)
             rtl.setGainMode(manual = true)
@@ -234,6 +246,23 @@ class RfDiagnostics(
 
     private suspend fun drain(rtl: RtlTcpClient, millis: Long) {
         withTimeoutOrNull(millis) { rtl.samples().collect { } }
+    }
+
+    /**
+     * Connect, retrying until [connectTimeoutMillis] elapses. A read timeout
+     * while parsing the hello header counts as retryable too: it is what a
+     * busy rtl_tcp looks like while the previous client's socket drains.
+     */
+    private suspend fun connectWithRetry(rtl: RtlTcpClient): ServerInfo {
+        val deadline = System.currentTimeMillis() + connectTimeoutMillis
+        while (true) {
+            try {
+                return rtl.connect()
+            } catch (e: IOException) {
+                if (System.currentTimeMillis() >= deadline) throw e
+                delay(connectRetryDelayMillis)
+            }
+        }
     }
 
     companion object {
