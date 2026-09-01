@@ -69,11 +69,24 @@ def load_measurement(path: pathlib.Path) -> dict:
     ]
     points.sort(key=lambda p: p["hz"])
 
+    # 用量反応図に使う 2 つの量。干渉の代表値は 2 倍波が 1090 MHz に落ちる
+    # 帯域（ch25）、受信性能はゲインスイープ中の最良 CRC 通過レートを取る。
+    harmonic = next((p for p in points if p.get("harmonic_hz")), None)
+    sweep = diagnostics.get("gain_sweep", [])
+    best_rate = max(
+        (g["crc_valid_frames"] * 1000.0 / g["window_ms"]
+         for g in sweep if g.get("window_ms")),
+        default=0.0,
+    )
+
     return {
         "name": derive_name(path, data),
         "points": points,
         "receiver": data.get("receiver", {}),
         "exported_at": data.get("exported_at", ""),
+        "interference_db": harmonic["mean"] if harmonic else None,
+        "frames_per_second": best_rate,
+        "confounded": False,
     }
 
 
@@ -87,6 +100,7 @@ def derive_name(path: pathlib.Path, data: dict) -> str:
         "haneda-t1": "羽田 T1",
         "tokyotower-maindeck": "東京タワー 150m",
         "skytree-base": "スカイツリー直下",
+        "site-b": "1.05km地点",
     }
     details = {
         "diag-skytree-side": "スカイツリー側",
@@ -257,6 +271,97 @@ def short_label(label: str) -> str:
     return replacements.get(label, label)
 
 
+def build_response_svg(measurements: list[dict]) -> str:
+    """干渉レベル（横）と受信性能（縦）の関係を散布図で描く。
+
+    点が少ないので回帰線は引かない。4 点で直線を引くと、実際には測っていない
+    中間領域まで関係が滑らかだと主張することになる。点と直接ラベルだけ置き、
+    読み手に形を判断させる。
+    """
+    usable = [m for m in measurements if m["interference_db"] is not None]
+    if len(usable) < 2:
+        return ""
+
+    w, h = 640, 300
+    x_min = min(0.0, min(m["interference_db"] for m in usable) - 3)
+    x_max = max(m["interference_db"] for m in usable) + 6
+    y_max = max(1.0, max(m["frames_per_second"] for m in usable) * 1.35)
+
+    def px(value: float) -> float:
+        return (value - x_min) / (x_max - x_min) * w
+
+    def py(value: float) -> float:
+        return h - value / y_max * h
+
+    parts: list[str] = []
+
+    for step in range(5):
+        value = y_max * step / 4
+        yy = py(value)
+        parts.append(f'<line class="hgrid" x1="0" y1="{yy:.1f}" x2="{w}" y2="{yy:.1f}"/>')
+        parts.append(f'<text class="tick y" x="-10" y="{yy + 4:.1f}">{value:.1f}</text>')
+
+    tick = math.ceil(x_min / 10) * 10
+    while tick <= x_max:
+        xx = px(tick)
+        parts.append(f'<text class="tick x" x="{xx:.1f}" y="{h + 20:.1f}">{tick:+.0f}</text>')
+        tick += 10
+
+    ordered = sorted(usable, key=lambda m: m["interference_db"])
+    placed: list[tuple[float, float, float]] = []
+    for measurement in ordered:
+        cx, cy = px(measurement["interference_db"]), py(measurement["frames_per_second"])
+        marker = "point-confounded" if measurement["confounded"] else "point"
+        title = (
+            f'{measurement["name"]}\n'
+            f'ch25 干渉 {measurement["interference_db"]:+.1f} dB\n'
+            f'{measurement["frames_per_second"]:.1f} フレーム/秒'
+        )
+        parts.append(f'<g class="response"><title>{html.escape(title)}</title>')
+        parts.append(f'<circle class="{marker}" cx="{cx:.1f}" cy="{cy:.1f}" r="6"/>')
+
+        anchor = "end" if cx > w * 0.72 else "start"
+        dx = -12 if anchor == "end" else 12
+
+        # 受信ゼロの点は軸上に並ぶのでラベルが必ず衝突する。ラベルの占める
+        # 矩形を実測（日本語 1 文字 ≒ 12px、英数 ≒ 6px）で見積もり、
+        # 重なる限り上へ段をずらす。重なったラベルは読めず情報を失う。
+        label_w = estimate_text_width(measurement["name"]) + 24
+        left = cx + dx - (label_w if anchor == "end" else 0)
+        label_y = cy - 14
+        while any(
+            abs(label_y - y) < 34 and left < x_right and left + label_w > x_left
+            for x_left, x_right, y in placed
+        ):
+            label_y -= 34
+        placed.append((left, left + label_w, label_y))
+        parts.append(
+            f'<line class="leader" x1="{cx:.1f}" y1="{cy:.1f}" '
+            f'x2="{cx + dx * 0.35:.1f}" y2="{label_y + 5:.1f}"/>'
+        )
+        parts.append(
+            f'<text class="point-label" x="{cx + dx:.1f}" y="{label_y:.1f}" '
+            f'text-anchor="{anchor}">{html.escape(measurement["name"])}</text>'
+        )
+        parts.append(
+            f'<text class="point-value" x="{cx + dx:.1f}" y="{label_y + 14:.1f}" '
+            f'text-anchor="{anchor}">{measurement["frames_per_second"]:.1f} f/s'
+            + ("（ガラス越し）" if measurement["confounded"] else "")
+            + "</text>"
+        )
+        parts.append("</g>")
+
+    body = "\n".join(parts)
+    return f"""<svg viewBox="-56 -52 {w + 116} {h + 92}" role="img">
+{body}
+</svg>"""
+
+
+def estimate_text_width(text: str) -> float:
+    """SVG では文字幅を測れないので、全角/半角で概算する。"""
+    return sum(12.0 if ord(ch) > 0x2E80 else 6.5 for ch in text)
+
+
 def build_table(measurements: list[dict]) -> str:
     """同じ数値を表としても出す（色だけに頼らせないため）。"""
     labels = [p["label"] for p in measurements[0]["points"]]
@@ -279,11 +384,33 @@ def build_table(measurements: list[dict]) -> str:
 </table>"""
 
 
+def build_response_card(measurements: list[dict]) -> str:
+    svg = build_response_svg(measurements)
+    if not svg:
+        return ""
+    confounded = [m for m in measurements if m["confounded"]]
+    caveat = (
+        "<p class=\"note\">"
+        + "、".join(html.escape(m["name"]) for m in confounded)
+        + " は屋内で Low-E ガラス越しのため、受信できない理由が干渉だけではない。"
+        + "白抜きの点で区別している。</p>"
+        if confounded else ""
+    )
+    return f"""<div class="card">
+    <h2>干渉レベルと受信性能</h2>
+    <p class="lede">横軸は 2 倍波が ADS-B に落ちる ch25 のレベル、縦軸はゲインスイープ中に
+    達成できた最良の CRC 通過レート。点が少ないので回帰線は引いていない。</p>
+    <div class="scroller">{svg}</div>
+    <p class="axis-title">横軸: ch25 干渉レベル [dB]（対照基準）・ 縦軸: CRC 通過 [フレーム/秒]</p>
+    {caveat}
+  </div>"""
+
+
 def build_html(measurements: list[dict]) -> str:
     legend = "".join(
-        f'<span class="legend-item s{i % len(SERIES_COLORS)}">'
+        f'<span class="legend-item s{i}">'
         f'<span class="swatch"></span>{html.escape(m["name"])}</span>'
-        for i, m in enumerate(measurements)
+        for i, m in enumerate(measurements[: len(SERIES_COLORS)])
     )
     color_vars_light = "\n".join(
         f"  --series-{i}: {SERIES_COLORS[i][0]};" for i in range(len(SERIES_COLORS))
@@ -378,6 +505,13 @@ svg pattern#clip line {{ stroke: var(--surface); opacity: .55; }}
 .series.s1 {{ --c: var(--series-1); }}
 .series.s2 {{ --c: var(--series-2); }}
 .axis-title {{ font-size: .8rem; color: var(--text-muted); margin-top: 8px; }}
+h2 {{ font-size: 1.05rem; margin: 0 0 6px; }}
+svg text.tick.x {{ text-anchor: middle; fill: var(--text-muted); font-size: 11px; }}
+.response circle.point {{ fill: var(--series-0); }}
+.response circle.point-confounded {{ fill: var(--panel); stroke: var(--series-0); stroke-width: 2; }}
+.response text.point-label {{ fill: var(--text-primary); font-size: 12px; font-weight: 600; }}
+.response text.point-value {{ fill: var(--text-secondary); font-size: 11px; }}
+.response line.leader {{ stroke: var(--text-muted); stroke-width: 1; opacity: .45; }}
 table {{ border-collapse: collapse; width: 100%; font-size: .84rem; }}
 caption {{ text-align: left; color: var(--text-muted); font-size: .8rem; padding-bottom: 10px; }}
 th, td {{ text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }}
@@ -398,11 +532,13 @@ tbody th {{ text-align: left; font-weight: 500; }}
 
   <div class="card">
     <div class="legend">{legend}</div>
-    <div class="scroller">{build_svg(measurements)}</div>
+    <div class="scroller">{build_svg(measurements[:len(SERIES_COLORS)])}</div>
     <p class="axis-title">横軸: 周波数（昇順）・ 縦軸: 空きチャンネル基準の相対レベル [dB]</p>
   </div>
 
-  <div class="card">{build_table(measurements)}</div>
+  {build_response_card(measurements)}
+
+  <div class="card">{build_table(measurements[:len(SERIES_COLORS)])}</div>
 
   <p class="note">帯域スキャンは <strong>9 点の離散サンプル</strong>であり掃引スペクトラムではない。
   測っていない周波数を測ったように見せないため、点を線で結んでいない。
@@ -416,6 +552,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("logs", nargs="+", type=pathlib.Path)
     parser.add_argument("-o", "--output", type=pathlib.Path, required=True)
+    parser.add_argument(
+        "--confounded",
+        action="append",
+        default=[],
+        metavar="SUBSTRING",
+        help="受信できない理由が干渉以外にもある計測（例: ガラス越しの屋内）。"
+             "系列名に含まれる文字列で指定し、散布図で白抜きにする。",
+    )
     args = parser.parse_args()
 
     measurements = []
@@ -430,11 +574,16 @@ def main() -> int:
         return 1
     if len(measurements) > len(SERIES_COLORS):
         print(
-            f"警告: 系列が {len(SERIES_COLORS)} を超えると識別性が保証できません。"
-            f"先頭 {len(SERIES_COLORS)} 件のみ描画します。",
+            f"注意: 帯域スキャン図は先頭 {len(SERIES_COLORS)} 件のみ描画します"
+            f"（色数を超えると識別性が保証できないため）。"
+            f"散布図には全 {len(measurements)} 件を使います。",
             file=sys.stderr,
         )
-        measurements = measurements[: len(SERIES_COLORS)]
+
+    for pattern in args.confounded:
+        for measurement in measurements:
+            if pattern in measurement["name"]:
+                measurement["confounded"] = True
 
     args.output.write_text(build_html(measurements))
     print(f"wrote {args.output} ({len(measurements)} series)")
