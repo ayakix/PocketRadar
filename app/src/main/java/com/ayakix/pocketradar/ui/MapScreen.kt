@@ -322,11 +322,13 @@ fun MapScreen(viewModel: RadarViewModel) {
             onReset = viewModel::resetLog,
             onResetCoverage = viewModel::resetCoverage,
             onStartDiagnostics = {
-                viewModel.onDiagnosticsDriverLaunch()
-                try {
-                    diagnosticsDriverLauncher.launch(SdrDriver.openIntent())
-                } catch (e: ActivityNotFoundException) {
-                    viewModel.onDiagnosticsDriverFailed(SdrDriver.NOT_INSTALLED_MESSAGE)
+                scope.launch {
+                    viewModel.prepareForDiagnostics()
+                    try {
+                        diagnosticsDriverLauncher.launch(SdrDriver.openIntent())
+                    } catch (e: ActivityNotFoundException) {
+                        viewModel.onDiagnosticsDriverFailed(SdrDriver.NOT_INSTALLED_MESSAGE)
+                    }
                 }
             },
             onCancelDiagnostics = viewModel::cancelDiagnostics,

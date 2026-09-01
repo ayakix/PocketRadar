@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class RadarViewModel(
@@ -104,14 +105,23 @@ class RadarViewModel(
     }
 
     /**
-     * UI is about to bounce through the SDR driver's `iqsrc://` intent before
-     * [startDiagnostics]. Stop any running source now (the dongle serves one
-     * client at a time) and show progress so the button press has feedback
-     * during the driver round-trip.
+     * Prepare for the SDR driver's `iqsrc://` round-trip: stop any running
+     * source and wait for the driver to actually let go of the dongle.
+     *
+     * The wait is the important part. Stopping the service closes our TCP
+     * socket, the driver notices the disconnect, shuts down rtl_tcp, and
+     * only then releases the USB device — firing the open intent before
+     * that ends in LIBUSB_ERROR_BUSY. There is no signal for "released",
+     * so we wait for our own service to report stopped and then pad with a
+     * fixed grace period for the driver's teardown.
      */
-    fun onDiagnosticsDriverLaunch() {
-        stop()
+    suspend fun prepareForDiagnostics() {
         _diagnostics.value = DiagnosticsState.Running("SDR ドライバを起動中", 0, 1)
+        if (sourceState.value.running) {
+            stop()
+            sourceState.first { !it.running }
+            delay(DriverReleaseGraceMillis)
+        }
     }
 
     /** The driver round-trip failed; surface it in the diagnostics panel. */
@@ -125,7 +135,10 @@ class RadarViewModel(
      * races the foreground service for the same socket.
      */
     fun startDiagnostics() {
-        if (_diagnostics.value is DiagnosticsState.Running) return
+        // 再入ガードは実行中ジョブで判定する。状態の Running は
+        // onDiagnosticsDriverLaunch がプレースホルダとして先にセットする
+        // ため、状態で弾くとドライバ復帰後の本実行まで弾いてしまう。
+        if (diagnosticsJob?.isActive == true) return
         stop()
         diagnosticsJob?.cancel()
         _diagnostics.value = DiagnosticsState.Running("接続中", 0, 1)
@@ -150,6 +163,11 @@ class RadarViewModel(
                     }
                 }
         }
+    }
+
+    companion object {
+        /** ドライバがソケット切断を検知して USB を手放すまでの猶予。 */
+        private const val DriverReleaseGraceMillis = 1_500L
     }
 
     fun cancelDiagnostics() {
