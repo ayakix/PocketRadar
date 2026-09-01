@@ -264,6 +264,7 @@ fun MapScreen(viewModel: RadarViewModel) {
         SourceControlBar(
             state = sourceState,
             aircraftCount = aircraft.size,
+            positionedCount = aircraft.values.count { it.latitude != null && it.longitude != null },
             onReplay = viewModel::startReplay,
             onLive = {
                 try {
@@ -351,6 +352,7 @@ fun MapScreen(viewModel: RadarViewModel) {
 private fun SourceControlBar(
     state: SourceState,
     aircraftCount: Int,
+    positionedCount: Int,
     onReplay: () -> Unit,
     onLive: () -> Unit,
     onStop: () -> Unit,
@@ -418,8 +420,14 @@ private fun SourceControlBar(
                 StatusDot(running = state.running, live = state.mode == SourceMode.LIVE)
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (state.running) "${state.mode.label} — $aircraftCount aircraft tracked"
-                    else "Idle — pick a source to start",
+                    // tracked は ICAO を識別できた数、on map は CPR の even/odd
+                    // ペアが揃って位置が確定した数。両者は仕様として一致しない
+                    // (質問が出たので数字で見せる)。
+                    text = if (state.running) {
+                        "${state.mode.label} — $aircraftCount tracked / $positionedCount on map"
+                    } else {
+                        "Idle — pick a source to start"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

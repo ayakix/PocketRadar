@@ -18,6 +18,7 @@ fun analyze(bands: List<BandResult>, gains: List<GainResult>): List<Finding> {
     val findings = mutableListOf<Finding>()
 
     findings += analyzeInputLevel(bands)
+    findings += analyzePulseInterference(bands)
     findings += analyzeMinimumGainLevel(gains)
     findings += analyzeGainCurve(gains)
     findings += analyzeDecoding(gains)
@@ -86,6 +87,37 @@ private fun analyzeInputLevel(bands: List<BandResult>): List<Finding> {
     }
 
     return findings
+}
+
+/**
+ * 空きチャンネルの「平均は静かなのにピークだけ強い」パターンはパルス性の
+ * 干渉源を示す。1090 MHz 近傍でその代表格は DME (962〜1213 MHz のパルス
+ * ペア) で、空港のそばでは避けられない。羽田での実測 (対照 1080 MHz が
+ * 平均 -47 dBFS / ピーク -4.8 dBFS) がこの判定を追加した動機。
+ *
+ * 連続波の飽和と違い利得調整では消えず、プリアンブル検出器が誤反応して
+ * 候補数だけが膨らむ、という形で復調品質に効く。
+ */
+private fun analyzePulseInterference(bands: List<BandResult>): List<Finding> {
+    val pulsed = bands
+        .filter { it.target.role == BandRole.QUIET_REFERENCE }
+        .filter {
+            it.metrics.peakLevelDbfs - it.metrics.meanLevelDbfs >= PulsePeakExcessDb &&
+                it.metrics.peakLevelDbfs >= PulsePeakFloorDbfs
+        }
+    val worst = pulsed.maxByOrNull { it.metrics.peakLevelDbfs } ?: return emptyList()
+
+    return listOf(
+        Finding(
+            Severity.WARNING,
+            "空きチャンネルに強力なパルス性信号 (DME の可能性)",
+            "${worst.target.label} の平均は ${"%.1f".format(worst.metrics.meanLevelDbfs)} dBFS と" +
+                "静かなのに、ピークは ${"%.1f".format(worst.metrics.peakLevelDbfs)} dBFS に達しています。" +
+                "連続波ではなく強いパルスが飛んでいる形で、この周波数帯では空港の DME " +
+                "(距離測定装置) が典型です。プリアンブル検出器がパルスに誤反応して候補数が" +
+                "膨らみ、CRC 通過率を押し下げます。空港から離れれば自然に消える性質のものです。",
+        )
+    )
 }
 
 /**
@@ -213,6 +245,12 @@ private const val StrongCarrierWarningDb = 12.0
 
 /** ここまで来ると、フィルタなしでは受信は難しいと判断する。 */
 private const val StrongCarrierCriticalDb = 25.0
+
+/** 空きチャンネルでピークが平均をこれだけ上回ったらパルス性とみなす。 */
+private const val PulsePeakExcessDb = 30.0
+
+/** 弱いパルスまで騒がないよう、ピーク自体にも下限を置く。 */
+private const val PulsePeakFloorDbfs = -20.0
 
 /** 「最小利得」とみなす上限 (0.1 dB 単位)。 */
 private const val MinimumGainTenthsDb = 100

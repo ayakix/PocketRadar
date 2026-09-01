@@ -15,15 +15,20 @@ class DiagnosticsAnalysisTest {
     // ---- helpers ------------------------------------------------------------
 
     /** Build metrics whose [SignalMetrics.meanLevelDbfs] equals [dbfs]. */
-    private fun metricsAt(dbfs: Double, clipRate: Double = 0.0): SignalMetrics {
+    private fun metricsAt(
+        dbfs: Double,
+        clipRate: Double = 0.0,
+        peakDbfs: Double = dbfs,
+    ): SignalMetrics {
         val mean = SignalMetrics.FullScaleMagnitude * 10.0.pow(dbfs / 20.0)
+        val peak = SignalMetrics.FullScaleMagnitude * 10.0.pow(peakDbfs / 20.0)
         val samples = 100_000
         return SignalMetrics(
             sampleCount = samples,
             clippedSamples = (samples * clipRate).toInt(),
             meanMagnitude = mean,
             rmsMagnitude = mean,
-            peakMagnitude = mean.toInt().coerceAtLeast(1),
+            peakMagnitude = peak.toInt().coerceAtLeast(1),
             dcOffsetI = 0.0,
             dcOffsetQ = 0.0,
         )
@@ -34,9 +39,10 @@ class DiagnosticsAnalysisTest {
         dbfs: Double,
         role: BandRole = BandRole.SURVEY,
         harmonicHz: Int? = null,
+        peakDbfs: Double = dbfs,
     ) = BandResult(
         target = BandTarget(label, 500_000_000, role = role, harmonicOfInterestHz = harmonicHz),
-        metrics = metricsAt(dbfs),
+        metrics = metricsAt(dbfs, peakDbfs = peakDbfs),
     )
 
     private fun gain(
@@ -153,6 +159,32 @@ class DiagnosticsAnalysisTest {
         val findings = analyze(emptyList(), gains)
 
         assertEquals(Severity.CRITICAL, findings.titled("最小利得でも入力が過大")?.severity)
+    }
+
+    // ---- パルス性干渉 (DME) ---------------------------------------------------
+
+    @Test
+    fun `quiet reference with huge peak-to-mean ratio flags pulse interference`() {
+        // 羽田実測の再現: 対照 1080 MHz が平均 -47 dBFS / ピーク -4.8 dBFS。
+        val bands = listOf(
+            band("対照 1080", -47.0, BandRole.QUIET_REFERENCE, peakDbfs = -4.8),
+            band("対照 1100", -47.0, BandRole.QUIET_REFERENCE, peakDbfs = -34.0),
+        )
+        val findings = analyze(bands, listOf(gain(402, validFrames = 4)))
+
+        val finding = findings.titled("パルス性信号")
+        assertEquals(Severity.WARNING, finding?.severity)
+        assertTrue(finding!!.detail.contains("DME"))
+    }
+
+    @Test
+    fun `moderate peaks on quiet references stay silent`() {
+        val bands = listOf(
+            band("対照 1080", -48.0, BandRole.QUIET_REFERENCE, peakDbfs = -34.0),
+        )
+        val findings = analyze(bands, listOf(gain(402, validFrames = 40)))
+
+        assertTrue(findings.titled("パルス性信号") == null, "unexpected: $findings")
     }
 
     // ---- 届いていない vs 復調できない -----------------------------------------

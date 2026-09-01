@@ -315,6 +315,12 @@ class RfDiagnostics(
         private const val BandSettleMillis = 350L
         private const val BandWindowMillis = 450L
         private const val GainSettleMillis = 400L
-        private const val GainWindowMillis = 1_500L
+
+        /**
+         * 1.5 s windows proved too noisy in the field (2〜4 valid frames per
+         * step at Haneda — pure sampling jitter). 5 s per step trades a
+         * longer run (~50 s total) for counts that can actually be compared.
+         */
+        private const val GainWindowMillis = 5_000L
     }
 }

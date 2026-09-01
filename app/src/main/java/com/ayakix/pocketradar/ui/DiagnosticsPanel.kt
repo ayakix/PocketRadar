@@ -70,7 +70,7 @@ private fun IdleIntro(onStart: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            text = "所要 約25秒。実行中はライブ受信を停止します。",
+            text = "所要 約1分。実行中はライブ受信を停止します。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
